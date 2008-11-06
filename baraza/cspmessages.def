@@ -1,0 +1,1973 @@
+/*
+ * Baraza - Open  Source IMPS/Wireless Village Server
+ * 
+ * 
+ * 
+ * Copyright (C) 2007 - , Digital Solutions Ltd. - http://www.dsmagic.com
+ *
+ * admin@baraza.im
+ * 
+ * This program is free software, distributed under the terms of
+ * the GNU General Public License, with a few exceptions granted (see LICENSE)
+ */ 
+/*  Definition of message types
+ *  this file exists because we want to get away from the (WB)XML message structure 
+ *  as quickly as possible, to make the code (elsewhere) more
+ *  readable. 
+ *  Of course the result is some pretty severe abuse of compiler resources!
+ */
+
+/* WBXML tags will be defined elsewhere. */
+Basic(UserID,  IMPS_1_1, NONE, String)
+
+Basic(ApplicationID,  IMPS_1_1, NONE, String)
+Basic(TimeToLive, IMPS_1_1, NONE,Integer)
+Basic(Code, IMPS_1_1, NONE,Integer)
+Basic(DigestSchema,  IMPS_1_1, NONE, String)
+Basic(DigestBytes,  IMPS_1_1, NONE, String)
+Basic(SessionID,  IMPS_1_1, NONE, String)
+Basic(SessionCookie,  IMPS_1_1, NONE, String)
+Basic(Description,  IMPS_1_1, NONE, String)
+Basic(AllFeat, IMPS_1_1, NONE,EmptyTag) /* for empty tags -- a demo. */
+
+Structure(_ClientID_UM, 0, IMPS_1_1,NONE,NONE)
+
+Structure(ClientID,  1, IMPS_1_1, NONE, 
+  Item(url,URL)
+  Item(msisdn,MSISDN)
+)
+
+Structure(EmptyObject,0, IMPS_1_1000,ATTRIBUTES(ATTR(xmlns)),NONE) /* generic/empty structure. */
+
+Basic(Poll,IMPS_1_1, NONE,Boolean)
+Basic(CIR,IMPS_1_1, NONE,Boolean)
+Basic(SessionType,IMPS_1_1, NONE,String)
+Basic(AcceptedCharset,IMPS_1_1, NONE,Integer)
+
+Basic(TransactionMode,IMPS_1_1, NONE,String)
+Basic(TransactionID,IMPS_1_1, NONE,String)
+Basic(SegmentCount,IMPS_1_1, NONE,Integer)
+Basic(SegmentReference,IMPS_1_1, NONE,Integer)
+Basic(ExtBlock,IMPS_1_1, 	ATTRIBUTES(ATTR(xmlns)),  String)
+Basic(SessionNSName,IMPS_1_1, NONE,String)
+Basic(TransactionNSName,IMPS_1_1, NONE,String)
+Basic(PresenceAttributeNSName,IMPS_1_1, NONE,String)
+Basic(URL,IMPS_1_1, NONE,String)
+Basic(MSISDN,IMPS_1_1, NONE,String)
+Basic(ExtendedData,IMPS_1_1, 	ATTRIBUTES(ATTR(xmlns)),  String)
+
+Structure(WV_CSP_Message, 1, IMPS_1_1, 
+	ATTRIBUTES(ATTR(xmlns)), 
+	Item(sess,Session)) 
+Structure(Session, 1, IMPS_1_1, NONE, 
+	Item(descr, SessionDescriptor)
+	List(tlist,Transaction) 
+	Item(poll,Poll)
+	Item(cir, CIR)
+)
+ 
+Structure(SessionDescriptor, 1, IMPS_1_1, NONE,
+ Item(stype,SessionType)
+ Item(sessid, SessionID)
+) 
+Structure(Transaction, 1, IMPS_1_1, NONE, 
+ Item(descr, TransactionDescriptor) 
+ Item(content,TransactionContent)
+ List(ext, ExtBlock)
+)
+ 
+Structure(TransactionDescriptor, 1, IMPS_1_1, NONE, 
+	 Item(mode, TransactionMode)
+         Item(id,TransactionID) 
+         Item(seg,SegmentInfo)
+	 Item(poll,Poll) // For v1.1
+) 
+
+Structure(SegmentID, 1, IMPS_1_1, NONE,
+	 Item(tid,TransactionID)
+	 Item(ref,SegmentReference)
+)
+
+Structure(SegmentInfo, 1, IMPS_1_1, NONE, 
+  Item(count,SegmentCount)
+  Item(id, SegmentID)
+)
+ 
+Structure(WV_CSP_VersionDiscovery_Request, 1, IMPS_1_1, NONE,
+	Item(vlist,VersionList)
+	List(ext, ExtendedData)
+) 
+Structure(WV_CSP_VersionDiscovery_Response, 1, IMPS_1_1, NONE,
+	Item(vlist,VersionList)
+	List(slist, OtherServer) 
+	List(ext,ExtendedData)
+) 
+Structure(VersionList, 1, IMPS_1_1, NONE,
+	List(snslist,SessionNSName)
+	List(tnslist, TransactionNSName)
+	List(pnslist, PresenceAttributeNSName)
+)
+ 
+Structure(OtherServer, 1, IMPS_1_1, NONE,
+Item(url,URL)
+Item(msisdn, MSISDN) /* for this one we interpreted the
+		      * syntax. Semantic checking at higher level! 
+		      */	   
+)  
+
+Structure(TransactionContent, 1, IMPS_1_1, ATTRIBUTES(ATTR(xmlns)),
+Union(tc,
+UELEM(Status)
+UELEM(Polling_Request)
+UELEM(Login_Request)
+UELEM(Login_Response)
+UELEM(Logout_Request)
+UELEM(Disconnect)
+UELEM(KeepAlive_Request)
+UELEM(KeepAlive_Response)
+UELEM(GetSPInfo_Request)
+UELEM(GetSPInfo_Response)
+UELEM(Service_Request)
+UELEM(Service_Response)
+UELEM(ClientCapability_Request)
+UELEM(ClientCapability_Response)
+UELEM(GetSegment_Request)
+UELEM(GetSegment_Response)
+UELEM(DropSegment_Request)
+UELEM(SystemMessage_Request)
+UELEM(SystemMessage_User)
+UELEM(SubscribeNotification_Request)
+UELEM(UnsubscribeNotification_Request)
+UELEM(Notification_Request)
+UELEM(GetPublicProfile_Request)
+UELEM(GetPublicProfile_Response)
+UELEM(UpdatePublicProfile_Request)
+UELEM(Search_Request)
+UELEM(Search_Response)
+UELEM(StopSearch_Request)
+UELEM(Invite_Request)
+UELEM(Invite_Response)
+UELEM(InviteUser_Request)
+UELEM(InviteUser_Response)
+UELEM(CancelInvite_Request)
+UELEM(CancelInviteUser_Request)
+UELEM(GetMap_Request)
+UELEM(GetMap_Response)
+UELEM(VerifyID_Request)
+UELEM(GetList_Request)
+UELEM(GetList_Response)
+UELEM(CreateList_Request)
+UELEM(CreateList_Response)
+UELEM(DeleteList_Request)
+UELEM(ListManage_Request)
+UELEM(ListManage_Response)
+UELEM(CreateAttributeList_Request)
+UELEM(DeleteAttributeList_Request)
+UELEM(GetAttributeList_Request)
+UELEM(GetAttributeList_Response)
+UELEM(SubscribePresence_Request)
+UELEM(UnsubscribePresence_Request)
+UELEM(PresenceNotification_Request)
+UELEM(GetWatcherList_Request)
+UELEM(GetWatcherList_Response)
+UELEM(GetPresence_Request)
+UELEM(GetPresence_Response)
+UELEM(UpdatePresence_Request)
+UELEM(SendMessage_Request)
+UELEM(SendMessage_Response)
+UELEM(SetDeliveryMethod_Request)
+UELEM(GetMessageList_Request)
+UELEM(GetMessageList_Response)
+UELEM(RejectMessage_Request)
+UELEM(NewMessage)
+UELEM(MessageDelivered)
+UELEM(MessageNotification)
+UELEM(GetMessage_Request)
+UELEM(GetMessage_Response)
+UELEM(DeliveryReport_Request)
+UELEM(ForwardMessage_Request)
+UELEM(ForwardMessage_Response)
+UELEM(ExtendConversation_Request)
+UELEM(ExtendConversation_Response)
+UELEM(GetBlockedList_Request)
+UELEM(GetBlockedList_Response)
+UELEM(BlockEntity_Request)
+UELEM(CreateGroup_Request)
+UELEM(DeleteGroup_Request)
+UELEM(JoinGroup_Request)
+UELEM(JoinGroup_Response)
+UELEM(LeaveGroup_Request)
+UELEM(LeaveGroup_Response)
+UELEM(GetGroupMembers_Request)
+UELEM(GetGroupMembers_Response)
+UELEM(GetJoinedUsers_Request)
+UELEM(GetJoinedUsers_Response)
+UELEM(AddGroupMembers_Request)
+UELEM(RemoveGroupMembers_Request)
+UELEM(MemberAccess_Request)
+UELEM(GetGroupProps_Request)
+UELEM(GetGroupProps_Response)
+UELEM(SetGroupProps_Request)
+UELEM(RejectList_Request)
+UELEM(RejectList_Response)
+UELEM(SubscribeGroupNotice_Request)
+UELEM(SubscribeGroupNotice_Response)
+UELEM(GroupChangeNotice)
+UELEM(Extended_Request)
+UELEM(Extended_Response)
+)
+)
+
+
+Structure(Status,1, IMPS_1_1, NONE,
+ Item(res,Result)
+ Item(clid,ClientID)
+)
+
+
+Basic(Polling_Request,IMPS_1_1, NONE, EmptyTag)
+
+Structure(Login_Request,1, IMPS_1_1, NONE,
+ Item(user,UserID) 
+ Item(client,ClientID) 
+ Item(appid, ApplicationID) 
+ Item(pwd, Password) 
+ Item(digest,DigestBytes) 
+ List(dschema,DigestSchema) 
+ Item(sessid,SessionID) 
+ Item(ttl,TimeToLive) 
+ Item(cookie,SessionCookie) 
+ Item(smlist,SystemMessageResponseList) 
+ Item(fns,Functions) 
+ Item(caps,CapabilityList) 
+)
+
+Structure(Login_Response,1, IMPS_1_1, NONE,
+
+Item(user,UserID)
+Item(client,ClientID)
+Item(pwd,Password)
+Item(res,Result)
+Item(nonce,Nonce)
+Item(dschema,DigestSchema) 
+Item(sessid,SessionID)
+Item(alivet,KeepAliveTime)
+Item(capreq,CapabilityRequest)
+Item(fns,Functions)
+Item(caplist,AgreedCapabilityList)
+)
+
+
+Basic(ADDGM,IMPS_1_1,NONE,EmptyTag)
+Basic(RMVGM,IMPS_1_1,NONE,EmptyTag)
+Basic(MBRAC,IMPS_1_1,NONE,EmptyTag)
+Basic(REJEC,IMPS_1_1,NONE,EmptyTag)
+Basic(GETJU,IMPS_1_1,NONE,EmptyTag)
+Basic(GETSPI,IMPS_1_1,NONE,EmptyTag)
+Basic(GETMAP,IMPS_1_1,NONE,EmptyTag)
+Basic(SGMNT,IMPS_1_1,NONE,EmptyTag)
+Basic(SRCH,IMPS_1_1,NONE,EmptyTag)
+Basic(STSRC,IMPS_1_1,NONE,EmptyTag)
+Basic(INVIT,IMPS_1_1,NONE,EmptyTag)
+Basic(CAINV,IMPS_1_1,NONE,EmptyTag)
+Basic(VRID,IMPS_1_1,NONE,EmptyTag)
+Basic(GCLI,IMPS_1_1,NONE,EmptyTag)
+Basic(CCLI,IMPS_1_1,NONE,EmptyTag)
+Basic(DCLI,IMPS_1_1,NONE,EmptyTag)
+Basic(MCLS,IMPS_1_1,NONE,EmptyTag)
+Basic(GETWL,IMPS_1_1,NONE,EmptyTag)
+Basic(GETPR,IMPS_1_1,NONE,EmptyTag)
+Basic(UPDPR,IMPS_1_1,NONE,EmptyTag)
+Basic(MDELIV,IMPS_1_1,NONE,EmptyTag)
+Basic(FWMSG,IMPS_1_1,NONE,EmptyTag)
+Basic(SETD,IMPS_1_1,NONE,EmptyTag)
+Basic(GETLM,IMPS_1_1,NONE,EmptyTag)
+Basic(GETM,IMPS_1_1,NONE,EmptyTag)
+Basic(REJCM,IMPS_1_1,NONE,EmptyTag)
+Basic(NOTIF,IMPS_1_1,NONE,EmptyTag)
+Basic(NEWM,IMPS_1_1,NONE,EmptyTag)
+Basic(GLBLU,IMPS_1_1,NONE,EmptyTag)
+Basic(BLENT,IMPS_1_1,NONE,EmptyTag)
+Basic(CREAG,IMPS_1_1,NONE,EmptyTag)
+Basic(DELGR,IMPS_1_1,NONE,EmptyTag)
+Basic(GETGP,IMPS_1_1,NONE,EmptyTag)
+Basic(SETGP,IMPS_1_1,NONE,EmptyTag)
+Basic(SUBGCN,IMPS_1_1,NONE,EmptyTag)
+Basic(GRCHN,IMPS_1_1,NONE,EmptyTag)
+Basic(EXCON,IMPS_1_1,NONE,EmptyTag)
+Basic(GETGM,IMPS_1_1,NONE,EmptyTag)
+Basic(MF,IMPS_1_1,NONE,EmptyTag)
+Basic(MP,IMPS_1_1,NONE,EmptyTag)
+Basic(MM,IMPS_1_1,NONE,EmptyTag)
+Basic(MG,IMPS_1_1,NONE,EmptyTag)
+Basic(ADVSR,IMPS_1_1,NONE,EmptyTag)
+Basic(REACT,IMPS_1_1,NONE,EmptyTag)
+Basic(CAAUT,IMPS_1_1,NONE,EmptyTag)
+
+Basic(GETAUT,IMPS_1_1,NONE,EmptyTag)
+Basic(CALI,IMPS_1_1,NONE,EmptyTag)
+Basic(DALI,IMPS_1_1,NONE,EmptyTag)
+Basic(GALS,IMPS_1_1,NONE,EmptyTag)
+
+Basic(OFFNOTIF,IMPS_1_1,NONE,EmptyTag)
+Basic(GetBlockedList_Request,IMPS_1_1,NONE,EmptyTag)
+Basic(GetList_Request,IMPS_1_1,NONE,EmptyTag)
+Basic(Logout_Request,IMPS_1_1,NONE,EmptyTag)
+
+
+Basic(ContentType,IMPS_1_1,NONE,String)
+Basic(ContentData,IMPS_1_1,NONE,String)
+Basic(ContentSize,IMPS_1_1,NONE,Integer)
+Basic(ContentEncoding,IMPS_1_1,NONE,String)
+Basic(AllFunctionsRequest,IMPS_1_1,NONE,Boolean)
+Basic(KeepAliveTime,IMPS_1_1,NONE,Integer)
+Basic(SName,IMPS_1_1,NONE,String)
+Basic(Name,IMPS_1_1,NONE,String)
+Basic(Value,IMPS_1_1,NONE,String)
+Basic(Validity,IMPS_1_1,NONE,Integer)
+Basic(ContentName,IMPS_1_1,NONE,String)
+Basic(Size,IMPS_1_1,NONE,String)
+Basic(Style,IMPS_1_1,NONE,String)
+Basic(Color,IMPS_1_1,NONE,String)
+Basic(DateTime,IMPS_1_1,NONE,Date)
+Basic(MessageCount,IMPS_1_1,NONE,Integer)
+Basic(MessageTotalCount,IMPS_1_1,NONE,Integer)
+Basic(ExtBlockETEM,IMPS_1_1,ATTRIBUTES(ATTR(xmlns)),String)
+Basic(DeliveryReport,IMPS_1_1,NONE,Boolean)
+Basic(DeliveryMethod,IMPS_1_1,NONE,String)
+Basic(GroupContentLimit,IMPS_1_1,NONE,Integer)
+Basic(BlockListInUse,IMPS_1_1,NONE,Boolean)
+Basic(GrantListInUse,IMPS_1_1,NONE,Boolean)
+Basic(InUse,IMPS_1_1,NONE,Boolean)
+Basic(ExtendConversationID,IMPS_1_1,NONE,String)
+Basic(JoinGroup,IMPS_1_1,NONE,Boolean)
+Basic(SubscribeNotification,IMPS_1_1,NONE,Boolean)
+Basic(JoinedRequest,IMPS_1_1,NONE,Boolean)
+Basic(SubscribeType,IMPS_1_1,NONE,String)
+Basic(NotificationType,IMPS_1_1,NONE,String)
+Basic(ClearPublicProfile,IMPS_1_1,NONE,Boolean)
+Basic(AdvancedCriteria,IMPS_1_1,NONE,String)
+Basic(CompletionFlag,IMPS_1_1,NONE,Boolean)
+Basic(SearchElement,IMPS_1_1,NONE,String)
+Basic(SearchString,IMPS_1_1,NONE,String)
+Basic(PairID,IMPS_1_1,NONE,Integer)
+Basic(SearchLimit,IMPS_1_1,NONE,Integer)
+Basic(SearchID,IMPS_1_1,NONE,Integer)
+Basic(SearchIndex,IMPS_1_1,NONE,Integer)
+Basic(SearchFindings,IMPS_1_1,NONE,Integer)
+Basic(InviteID,IMPS_1_1,NONE,String)
+Basic(InviteType,IMPS_1_1,NONE,String)
+Basic(InviteNote,IMPS_1_1,NONE,String)
+Basic(Acceptance,IMPS_1_1,NONE,Boolean)
+Basic(AutoSubscribe,IMPS_1_1,NONE,Boolean)
+Basic(ResponseNote,IMPS_1_1,NONE,String)
+
+Basic(DefaultNotify,IMPS_1_1,NONE,Boolean)
+Basic(UserNotify,IMPS_1_1,NONE,Boolean)
+Basic(ContactListNotify,IMPS_1_1,NONE,Boolean)
+Basic(Domain,IMPS_1_1,NONE,String)
+Basic(TryAgainTimeout,IMPS_1_1,NONE,Integer)
+Basic(SystemMessageID,IMPS_1_1,NONE,String)
+Basic(RequiresResponse,IMPS_1_1,NONE,Boolean)
+Basic(SystemMessageText,IMPS_1_1,NONE,String)
+Basic(AnswerOptionID,IMPS_1_1,NONE,Integer)
+Basic(AnswerOptionText,IMPS_1_1,NONE,String)
+Basic(InText,IMPS_1_1,NONE,String)
+Basic(ChosenOptionID,IMPS_1_1,NONE,Integer)
+Basic(VerificationKey,IMPS_1_1,NONE,String)
+Basic(HistoryPeriod,IMPS_1_1,NONE,Integer)
+Basic(MaxWatcherList,IMPS_1_1,NONE,Integer)
+Basic(WatcherCount,IMPS_1_1,NONE,Integer)
+Basic(WatcherStatus,IMPS_1_1,NONE,String)
+Basic(FriendlyName,IMPS_1_1,NONE,String)
+Basic(GroupID,IMPS_1_1,NONE,String)
+Basic(SessionPriority,IMPS_1_1,NONE,Integer)
+Basic(MessageID,IMPS_1_1,NONE,String)
+Basic(MessageURI,IMPS_1_1,NONE,String)
+Basic(ContactList,IMPS_1_1,NONE,String)
+Basic(DefaultContactList,IMPS_1_1,NONE,String)
+Basic(DefaultList,IMPS_1_1,NONE,Boolean)
+Basic(ReceiveList,IMPS_1_1,NONE,Boolean)
+Basic(AuthorizeAndGrant,IMPS_1_1,NONE,Boolean)
+Basic(UnrecognizedUserID,IMPS_1_1,NONE,String)
+Basic(ValidUserID,IMPS_1_1,NONE,String)
+Basic(AcceptedPullLength,IMPS_1_1,NONE,Integer)
+Basic(AcceptedContentLength,IMPS_1_1,NONE,Integer)
+Basic(AcceptedPushLength,IMPS_1_1,NONE,Integer)
+Basic(AcceptedRichContentLength,IMPS_1_1,NONE,Integer)
+Basic(AcceptedTextContentLength,IMPS_1_1,NONE,Integer)
+Basic(AcceptedTransferEncoding,IMPS_1_1,NONE,String)
+Basic(AnyContent,IMPS_1_1,NONE,Boolean)
+Basic(CIRSMSAddress,IMPS_1_1,NONE,String)
+Basic(ClientType,IMPS_1_1,NONE,String)
+Basic(ContentPolicy,IMPS_1_1,NONE,String)
+Basic(ContentPolicyLimit,IMPS_1_1,NONE,Integer)
+Basic(DefaultLanguage,IMPS_1_1,NONE,String)
+Basic(InitialDeliveryMethod,IMPS_1_1,NONE,String)
+Basic(MultiTrans,IMPS_1_1,NONE,Integer)
+Basic(MultiTransPerMessage,IMPS_1_1,NONE,Integer)
+Basic(OfflineETEMHandling,IMPS_1_1,NONE,String)
+Basic(OnlineETEMHandling,IMPS_1_1,NONE,String)
+Basic(PlainTextCharset,IMPS_1_1,NONE,Integer)
+Basic(ParserSize,IMPS_1_1,NONE,Integer)
+Basic(ServerPollMin,IMPS_1_1,NONE,Integer)
+Basic(SupportedBearer,IMPS_1_1,NONE,String)
+Basic(SupportedOfflineBearer,IMPS_1_1,NONE,String)
+Basic(SupportedCIRMethod,IMPS_1_1,NONE,String)
+Basic(TCPAddress,IMPS_1_1,NONE,String)
+Basic(TCPPort,IMPS_1_1,NONE,Integer)
+Basic(UDPAddress,IMPS_1_1,NONE,Integer)
+Basic(UDPPort,IMPS_1_1,NONE,Integer)
+Basic(UserSessionLimit,IMPS_1_1,NONE,Integer)
+Basic(Extended_Request,IMPS_1_1,ATTRIBUTES(ATTR(xmlns)),String)
+Basic(Extended_Response,IMPS_1_1,ATTRIBUTES(ATTR(xmlns)),String)
+Basic(Password,IMPS_1_1,NONE,String)
+Basic(Nonce,IMPS_1_1,NONE,String)
+Basic(CapabilityRequest,IMPS_1_1,NONE,Boolean)
+Basic(DeliveryTime,IMPS_1_1,NONE,Date)
+
+
+Structure(Logo,1,IMPS_1_1,NONE,
+  Item(ctype,ContentType)
+  Item(size, ContentSize)
+  Item(encoding, ContentEncoding) 
+  Item(data,ContentData)
+)
+
+Structure(Map,1,IMPS_1_1,NONE,
+Item(ctype,ContentType)
+Item(encoding, ContentEncoding)
+Item(data, ContentData)
+)
+Structure(AllFunctions,1,IMPS_1_1,NONE,
+Item(feat,WVCSPFeat)
+)
+Structure(Functions,1,IMPS_1_1,NONE,
+	Item(feat,WVCSPFeat)
+)
+Structure(WVCSPFeat,1,IMPS_1_1,NONE,
+  Item(ffeat,FundamentalFeat)
+  Item(pfeat, PresenceFeat)
+  Item(ifeat,IMFeat)
+  Item(gfeat,GroupFeat)
+)
+
+/* the next few have a cooked syntax. upper level will check validity
+ * more fully.
+ */
+Structure(FundamentalFeat_Union,0,IMPS_1_1, NONE,
+Item(sfunc,ServiceFunc)
+Item(srchfunc, SearchFunc)
+Item(ifunc,InviteFunc)
+Item(vidfunc, VerifyIDFunc)
+)
+Structure(FundamentalFeat,1,IMPS_1_1,NONE,
+ Item(mf,MF)
+ Item(feat,FundamentalFeat_Union)
+)
+
+Structure(PresenceFeat_Union,0,IMPS_1_1, NONE,
+Item(clfunc,ContListFunc)
+Item(pafunc, PresenceAuthFunc)
+Item(pdfunc, PresenceDeliverFunc)
+Item(alfunc, AttListFunc)
+)
+
+Structure(PresenceFeat,1,IMPS_1_1,NONE,
+  Item(mp,MP)
+  Item(feat, PresenceFeat_Union)
+)
+
+Structure(IMFeat_Union,0,IMPS_1_1, NONE,
+ Item(imfunc,IMSendFunc)
+ Item(imrfunc, IMReceiveFunc)
+ Item(imafunc, IMAuthFunc)
+)
+
+Structure(IMFeat,1,IMPS_1_1,NONE,
+   Item(mm,MM)
+   Item(feat,IMFeat_Union)
+)
+
+Structure(GroupFeat_Union,0,IMPS_1_1, NONE,
+Item(gmfunc,GroupMgmtFunc)
+Item(gufunc, GroupUseFunc)
+Item(gafunc, GroupAuthFunc)
+)
+
+Structure(GroupFeat,1,IMPS_1_1,NONE,
+  Item(mg,MG)
+  Item(feat,GroupFeat_Union)
+)
+
+Structure(ServiceFunc,1,IMPS_1_1,NONE,
+  Item(spi,GETSPI)
+  Item(map, GETMAP)
+  Item(seg, SGMNT)
+)
+
+Structure(SearchFunc,1,IMPS_1_1,NONE,
+  Item(srch,SRCH)
+  Item(advsrch, ADVSR)
+  Item(stsrc,STSRC)
+)
+
+Structure(InviteFunc,1,IMPS_1_1,NONE,
+  Item(inv,INVIT)
+  Item(cainv, CAINV)
+)
+
+Structure(VerifyIDFunc,1,IMPS_1_1,NONE,
+  Item(verify,VRID)
+)
+
+Structure(ContListFunc,1,IMPS_1_1,NONE,
+  Item(gcli,GCLI)
+  Item(ccli, CCLI)
+  Item(dcli, DCLI)
+  Item(mcls, MCLS)
+)
+
+Structure(PresenceDeliverFunc,1,IMPS_1_1,NONE,
+  Item(getpr,GETPR)
+  Item(updpr, UPDPR)
+)
+
+
+Structure(AttListFunc,1,IMPS_1_1,NONE,
+Item(cali,CALI)
+Item(dali,DALI)
+Item(gals,GALS)
+)
+
+Structure(PresenceAuthFunc,1,IMPS_1_1,NONE,
+Item(getwl,GETWL)
+Item(r,REACT)
+Item(c,CAAUT)
+Item(g,GETAUT)
+)
+
+Structure(IMSendFunc,1,IMPS_1_1,NONE,
+  Item(mdeliv,MDELIV)
+  Item(fwmsg, FWMSG)
+)
+
+Structure(IMReceiveFunc,1,IMPS_1_1,NONE,
+  Item(setd,SETD)
+  Item(getlm, GETLM)
+  Item(getm,GETM)
+  Item(rejcm, REJCM)
+  Item (notif,NOTIF)
+  Item (newm,NEWM)
+  Item(offnotif, OFFNOTIF)
+)
+
+Structure(IMAuthFunc,1,IMPS_1_1,NONE,
+
+  Item(glblu,GLBLU)
+ Item(blent, BLENT)
+)
+Structure(GroupMgmtFunc,1,IMPS_1_1,NONE,
+
+Item(creag,CREAG)
+Item(delgr, DELGR)
+Item(getgp, GETGP)
+Item(setgp, SETGP)
+)
+
+Structure(GroupUseFunc,1,IMPS_1_1,NONE,
+
+ Item(subgcn,SUBGCN)
+ Item(grchn, GRCHN)
+ Item(excon, EXCON)
+)
+
+Structure(GroupAuthFunc,1,IMPS_1_1,NONE,
+  Item(getgm,GETGM)
+  Item(addgrm, ADDGM)
+  Item(rmvgm, RMVGM)
+  Item(mbrac,MBRAC)
+  Item(rejec, REJEC)
+  Item(getju,GETJU)
+)
+
+Structure(MessageInfoList,1,IMPS_1_1,NONE,
+  List(mlist,MessageInfo)
+)
+
+Structure(MessageInfo,1,IMPS_1_1,NONE,
+ Item(msgid,MessageID)
+Item(uri,MessageURI) 
+Item(ctype, ContentType) 
+Item(enc, ContentEncoding) 
+Item(size, ContentSize)
+Item(cname, ContentName) 
+Item(rcpt, Recipient)
+Item(sender, Sender)
+Item(tdate, DateTime) 
+Item(font, Font) 
+Item(valid, Validity) 
+ List(ext,ExtBlockETEM)
+)
+
+Structure(Font,1,IMPS_1_1,NONE,
+  Item(size,Size)
+  List(style, Style)
+  Item(color, Color)
+)
+
+Structure(AList_Union,0,IMPS_1_1,NONE,
+ Item(alist,AddList)
+ Item(rlist,RemoveList)
+)
+
+Structure(BlockList,1,IMPS_1_1,NONE,
+  Item(inuse,InUse) // for v1.2 and below
+ Union(blist,
+  UELEM(EntityList)
+  UELEM(AList_Union)
+ )
+)
+
+Structure(GrantList,1,IMPS_1_1,NONE,
+  Item(inuse,InUse) // for v1.2 and below
+ Union(glist,
+  UELEM(EntityList)
+  UELEM(AList_Union)
+ )
+)
+
+Structure(EntityList,1,IMPS_1_1,NONE,
+
+  List(users,UserID)
+  List(snames, ScreenName)
+  List(gids, GroupID)
+  List(clist, ContactList)
+  List(appids, ApplicationID)
+)
+
+Structure(AddList,1,IMPS_1_1,NONE,
+
+  List(users,UserID)
+  List(snames, ScreenName)
+  List(gids, GroupID)
+  List(clist, ContactList)
+  List(appids, ApplicationID)
+
+)
+Structure(RemoveList,1,IMPS_1_1,NONE,
+
+  List(users,UserID)
+  List(snames, ScreenName)
+  List(gids, GroupID)
+  List(clist, ContactList)
+  List(appids, ApplicationID)
+
+)
+
+Structure(ContactListProperties,1,IMPS_1_1,NONE,
+
+  List(plist,Property)
+)
+
+Structure(GroupProperties,1,IMPS_1_1,NONE,
+  List(plist,Property)
+  Item(wnote,WelcomeNote)
+)
+
+Structure(OwnProperties,1,IMPS_1_1,NONE,
+  List(plist,Property)
+)
+
+Structure(Property,1,IMPS_1_1,NONE,
+  Item(name,Name)
+  Item(value,Value)
+)
+
+Structure(WelcomeNote,1,IMPS_1_1,NONE,
+  Item(ctype,ContentType)
+  Item(enc, ContentEncoding)
+  Item(data, ContentData)
+)
+
+Structure(ExtendConversationUser,1,IMPS_1_1,NONE,
+  Item(user,UserID)
+ Item(clientid, ClientID)
+)
+
+Structure(Admin,1,IMPS_1_1,NONE,
+  Item(ulist,UserList)
+)
+Structure(Mod,1,IMPS_1_1,NONE,
+  Item(ulist,UserList)
+)
+
+Structure(AdminMapList,1,IMPS_1_1,NONE,
+  Item(amap,AdminMapping)
+  Item(mmap, ModMapping)
+  Item(umap, UserMapping)
+)
+Structure(UserMapList,1,IMPS_1_1,NONE,
+  Item(umap,UserMapping)
+)
+
+Structure(AdminMapping,1,IMPS_1_1,NONE,
+  List(mlist,Mapping)
+)
+
+Structure(ModMapping,1,IMPS_1_1,NONE,
+  List(mlist,Mapping)
+)
+Structure(UserMapping,1,IMPS_1_1,NONE,
+  List(mlist,Mapping)
+)
+Structure(Mapping,1,IMPS_1_1,NONE,
+ Item(sname,SName)
+ Item(userid, UserID)
+)
+Structure(Joined,1,IMPS_1_1,NONE,
+  Item(umlist,UserMapList)
+  Item(ulist, UserList) // used by v1.1
+)
+Structure(Left,1,IMPS_1_1,NONE,
+  Item(ulist,UserList)
+)
+
+Structure(JoinedBlocked,1,IMPS_1_1,NONE, // only in 1.3
+  Item(ulist,UserList)
+)
+Structure(LeftBlocked,1,IMPS_1_1,NONE,
+  Item(ulist,UserList)
+)
+Structure(NotificationTypeList,1,IMPS_1_1,NONE,
+  List(ntype,NotificationType)
+)
+
+Structure(SegmentContent,1,IMPS_1_1,NONE,
+
+  NONE /* XXXXX we don't (yet) support content segmentation! XXXXX */
+  
+)
+
+Structure(PublicProfile,1,IMPS_1_1,NONE,
+   Item(userid,UserID) 
+   List(plist,Property)
+)
+Structure(SearchPairList,1,IMPS_1_1,NONE,
+  List(slist,SearchPair) // 1.3 allows for multiple searchpairs within list.
+)
+Structure(SearchPair,0,IMPS_1_1,NONE, // DTD for 1.3 is wrong in spec!
+  Item(elem,SearchElement)            // SearchPair has no tag!
+  Item(str, SearchString)
+  Item(pair, PairID)
+)
+Structure(SearchResult,1,IMPS_1_1,NONE,
+  Union(u,UELEM(UserList) UELEM(GroupList))
+)
+
+Structure(DefaultAttributeList,1,IMPS_1_1,NONE,
+  Item(dnotify,DefaultNotify)
+  Item(pslist, PresenceSubList)
+)
+
+Structure(_User_Presence,0,IMPS_1_1,NONE,
+ Item(user,UserID)
+ Item(notify,UserNotify)
+)
+
+Structure(_Clist_Presence,0,IMPS_1_1,NONE,
+ Item(clist,ContactList)
+ Item(notify,ContactListNotify)
+)
+
+Structure(Presence,1,IMPS_1_1,NONE,
+
+   Union(pres,UELEM(_User_Presence) UELEM(_Clist_Presence))
+   List(pslist,PresenceSubList)
+)
+
+Structure(SystemMessageList,1,IMPS_1_1,NONE,
+
+  List(sm,SystemMessage)
+)
+
+Structure(SystemMessageResponseList,1,IMPS_1_1,NONE,
+
+
+  List(sm,SystemMessageResponse)
+)
+
+Structure(SystemMessage,1,IMPS_1_1,NONE,
+
+Item(msgid,SystemMessageID)
+Item(reqresp, RequiresResponse)
+Item(text, SystemMessageText)
+Item(aoptions, AnswerOptions)
+Item(verify, VerificationMechanism)
+)
+
+Structure(SystemMessageResponse,1,IMPS_1_1,NONE,
+
+  Item(msgid,SystemMessageID)
+  Item(oid, ChosenOptionID)
+  Item(vkey, VerificationKey)
+)
+
+Structure(AnswerOptions,1,IMPS_1_1,NONE,
+  List(aoption,AnswerOption)
+)
+
+Structure(AnswerOption,1,IMPS_1_1,NONE,
+
+
+  Item(aoption,AnswerOptionID)
+  Item(atext, AnswerOptionText)
+)
+
+Structure(VerificationMechanism,1,IMPS_1_1,NONE,
+  Union(u,UELEM(InText) UELEM(URL))
+)
+Structure(Watcher,1,IMPS_1_1,NONE,
+  Item(user,UserID)
+  Item(uid,User)
+ Item(fname, FriendlyName)
+ Item(wstatus, WatcherStatus)
+)
+
+
+Structure(Sender,1,IMPS_1_1,NONE,
+
+  Union(u,UELEM(User) UELEM(Group))
+)
+
+Structure(Recipient,1,IMPS_1_1,NONE,
+
+  List(ulist,User) 
+  List(glist,Group)
+  List(clist,ContactList)
+)
+
+Structure(User,1,IMPS_1_1,NONE,
+
+
+  Item(user,UserID)
+  Item(fname, FriendlyName)
+  Union(u, UELEM(ApplicationID) UELEM(ClientID))
+)
+
+Structure(Group,1,IMPS_1_1,NONE,
+
+  Union(u,UELEM(GroupID) UELEM(ScreenName))
+)
+
+Structure(IDList,1,IMPS_1_1,NONE,
+
+
+  List(ulist,UserID)
+  List(clist, ContactList)
+  List(glist, GroupID)
+  List(slist,ScreenName)
+  List(dlist, Domain)
+)
+
+Structure(ScreenName,1,IMPS_1_1,NONE,
+  Item(sname,SName)
+ Item(gid, GroupID)
+)
+Structure(NickName,1,IMPS_1_1,NONE,
+  Item(name,Name)
+  Item(user, UserID)
+)
+Structure(URLList,1,IMPS_1_1,NONE,
+  List(ulist,URL)
+)
+Structure(GroupList,1,IMPS_1_1,NONE,
+  List(glist,GroupID)
+)
+Structure(UserIDList,1,IMPS_1_1,NONE,
+  List(ulist,UserID)
+)
+Structure(UserList,1,IMPS_1_1,NONE,
+
+  List(ulist,User)
+  List (slist,ScreenName)
+)
+
+Structure(ContactListIDList,1,IMPS_1_1,NONE,
+  List(clist,ContactList)
+)
+
+Structure(_NickU,0,IMPS_1_1,NONE,
+  Union(u,UELEM(NickName) UELEM(UserID))
+)
+
+Structure(NickList,1,IMPS_1_1,NONE,
+
+  List(nlist,_NickU) /* this is zero or more. */
+)
+
+Structure(AddNickList,1,IMPS_1_1,NONE,
+
+  List(nlist,_NickU) /* this is one or more. */
+
+)
+Structure(RemoveNickList,1,IMPS_1_1,NONE,
+
+  List(ulist,UserID)
+)
+
+Structure(UserIDPair,1,IMPS_1_1,NONE,
+
+
+  Item(urecuser,UnrecognizedUserID)
+ Item(vuser, ValidUserID)
+)
+
+Structure(_TCPAddr,0,IMPS_1_1,NONE,
+ Item(addr,TCPAddress)
+ Item(port,TCPPort)
+)
+Structure(_UDPAddr,0,IMPS_1_1,NONE,
+ Item(addr,UDPAddress)
+ Item(port,UDPPort)
+)
+
+Structure(AgreedCapabilityList,1,IMPS_1_1,NONE,
+ List(ctypes,AcceptedContentType) 
+ Item(ctype_all,AnyContent)
+ Item(pull_len,AcceptedPullLength)
+ Item(push_len,AcceptedPushLength)
+ Item(tc_len,AcceptedTextContentLength)
+ List(te,AcceptedTransferEncoding) /* syntax differs a little, but that's ok. */
+
+
+ Item(cir_http,  CIRHTTPAddress)
+ Item(cir_url, CIRURL)
+ Item(cir_sms,CIRSMSAddress) 
+ Item(mtrans,MultiTrans)
+ Item(mtrans_msg,MultiTransPerMessage)
+ Item(offline_m,OfflineETEMHandling)
+ Item(online_m,OnlineETEMHandling)
+ Item(poll_min,ServerPollMin)
+ List(bearers,SupportedBearer)
+ List(offline_bearers,SupportedOfflineBearer)
+ List(cir_methods,SupportedCIRMethod)
+ Item(tcp_addr,_TCPAddr)
+ Item(udp_addr,_UDPAddr)
+ Item(sess_pri,SessionPriority)
+ Item(sess_lim,UserSessionLimit)
+)
+
+Structure(AcceptedContentType,1,IMPS_1_1,NONE,
+ Item(ctype,ContentType)
+ Item(rich_clen,AcceptedRichContentLength)
+ Item(cpolicy,ContentPolicy)
+ Item(cpolicy_lim,ContentPolicyLimit)
+)
+
+Structure(CIRHTTPAddress,1,IMPS_1_1,NONE,
+  Item(url,URL)
+)
+
+Structure(CIRURL,1,IMPS_1_2,NONE,
+  Item(url,URL)
+)
+
+Structure(Result,1,IMPS_1_1,NONE,
+
+ Item(code,Code)
+ Item(descr,Description)
+ List(drlist,DetailedResult)
+ Item(sml,SystemMessageList)
+ Item(tatimeout,TryAgainTimeout)
+
+)
+
+
+Structure(CapabilityList,1,IMPS_1_1,NONE,
+
+ List(ctypes,AcceptedContentType) 
+ Item(ctype_all,AnyContent)
+ List(charset_list,AcceptedCharset)
+ Item(pull_len,AcceptedPullLength)
+ Item(push_len,AcceptedPushLength)
+ Item(txt_len,AcceptedTextContentLength)
+ List(te,AcceptedTransferEncoding)
+
+ Item(aclen, AcceptedContentLength)
+  
+ Item(cltype,ClientType)
+ Item(dfl_lang,DefaultLanguage)
+ Item(dmethod,InitialDeliveryMethod)
+ Item(mtrans,MultiTrans)
+ Item(mtransm,MultiTransPerMessage)
+ Item(offline_m,OfflineETEMHandling)
+ Item(online_m,OnlineETEMHandling)
+
+ List(pt_charset,PlainTextCharset)
+ Item(psize,ParserSize)
+ Item(poll_min,ServerPollMin)
+
+ List(bearers,SupportedBearer)
+ List(offline_bearers,SupportedOfflineBearer)
+ List(cir_methods,SupportedCIRMethod)
+
+ Item(udp_port,UDPPort)
+
+ Item(sess_pri,SessionPriority)
+
+ Item(tcp_addr,_TCPAddr) // only for v1.1 (response)
+ Item(udp_addr,_UDPAddr) // only for v1.1 (response)
+
+)
+Structure(ExtendConversation_Response,1,IMPS_1_1,NONE,
+
+
+  Item(ext_id,ExtendConversationID)
+ Item(gid, GroupID)
+ Item(rnote, ResponseNote)
+ Item(res, Result)
+)
+
+Structure(GetBlockedList_Response,1,IMPS_1_1,NONE,
+
+  Item(blist,BlockList)
+  Item(blist_inuse, BlockListInUse)
+ Item(glist, GrantList)
+ Item(glist_inuse, GrantListInUse)
+)
+Structure(BlockEntity_Request,1,IMPS_1_1,NONE,
+  Item(blist,BlockList)
+  Item(blist_inuse, BlockListInUse)
+ Item(glist, GrantList)
+ Item(glist_inuse, GrantListInUse)
+
+)
+Structure(CreateGroup_Request,1,IMPS_1_1,NONE,
+
+ Item(gid,GroupID)
+ Item(gprop,GroupProperties)
+ Item(oprop,OwnProperties)
+ Item(jgrp,JoinGroup)
+ Item(sname,ScreenName)
+ Item(snotify,SubscribeNotification)
+)
+
+Structure(DeleteGroup_Request,1,IMPS_1_1,NONE,
+
+
+  Item(gid,GroupID)
+)
+Structure(JoinGroup_Request,1,IMPS_1_1,NONE,
+
+ Item(gid,GroupID)
+ Item(sname,ScreenName)
+ Item(jreq,JoinedRequest)
+ Item(snotify,SubscribeNotification)
+ Item(oprop,OwnProperties)
+
+  
+)
+Structure(JoinGroup_Response,1,IMPS_1_1,NONE,
+
+
+  Item(joined,Joined)  // v1.3 only. 
+  Item(sname,ScreenName)
+  Item(ulist,UserList) // v1.1
+  Item(umlist,UserMapList) // v1.2 only
+  Item(wnote, WelcomeNote)
+)
+
+Structure(LeaveGroup_Request,1,IMPS_1_1,NONE,
+  Item(gid,GroupID)
+)
+Structure(LeaveGroup_Response,1,IMPS_1_1,NONE,
+  Item(gid,GroupID)
+  Item(res, Result)
+)
+Structure(GetGroupMembers_Request,1,IMPS_1_1,NONE,
+  Item(gid,GroupID)
+  Item(mtype, Value) // Only used by the XMPP module. Not part of CSP spec.
+)
+Structure(GetGroupMembers_Response,1,IMPS_1_1,NONE,
+//  Item(res,Result) // only used by SSP
+  Item(admin,Admin)
+  Item(mod, Mod)
+  Item(ulist,UserList)
+)
+Structure(GetJoinedUsers_Request,1,IMPS_1_1,NONE,
+
+
+  Item(gid,GroupID)
+)
+Structure(GetJoinedUsers_Response,1,IMPS_1_1,NONE,
+
+
+  Union(u,UELEM(AdminMapList) UELEM(UserMapList))
+  Item(jb, JoinedBlocked)
+)
+Structure(AddGroupMembers_Request,1,IMPS_1_1,NONE,
+
+
+  Item(gid,GroupID)
+  Union(ulist, UELEM(UserIDList) UELEM(UserList)) // differs in versions
+)
+Structure(RemoveGroupMembers_Request,1,IMPS_1_1,NONE,
+
+
+  Item(gid,GroupID) 
+  Union(ulist,UELEM(UserIDList) UELEM(UserList))
+)
+Structure(MemberAccess_Request,1,IMPS_1_1,NONE,
+  Item(gid,GroupID)
+  Item(admin,Admin)
+  Item(mod, Mod)
+  Item(ulist,UserList)
+)
+Structure(GetGroupProps_Request,1,IMPS_1_1,NONE,
+
+
+  Item(gid,GroupID)
+)
+Structure(GetGroupProps_Response,1,IMPS_1_1,NONE,
+
+
+  Item(gprop,GroupProperties)
+ Item (oprop,OwnProperties)
+)
+Structure(SetGroupProps_Request,1,IMPS_1_1,NONE,
+
+  Item(gid,GroupID)
+  Item(gprop,GroupProperties)
+  Item (oprop,OwnProperties)
+
+)
+Structure(RejectList_Request,1,IMPS_1_1,NONE,
+
+
+  Item(gid,GroupID)
+  Item(alist, AddList)
+  Item(rlist, RemoveList)
+)
+Structure(RejectList_Response,1,IMPS_1_1,NONE,
+
+
+  Item(ulist,UserList)
+)
+Structure(SubscribeGroupNotice_Request,1,IMPS_1_1,NONE,
+
+
+  Item(gid,GroupID)
+  Item(stype, SubscribeType)
+)
+Structure(SubscribeGroupNotice_Response,1,IMPS_1_1,NONE,
+
+
+  Item(value,Value)
+)
+Structure(GroupChangeNotice,1,IMPS_1_1,NONE,
+
+ Item(gid,GroupID)
+ Item(joined,Joined)
+ Item(left,Left)
+ Item(jblock,JoinedBlocked)
+ Item(lblock,LeftBlocked)
+ Item(gprop,GroupProperties)
+ Item(oprop,OwnProperties)
+  
+)
+Structure(ForwardMessage_Response,1,IMPS_1_1,NONE,
+
+
+  Item(msgid,MessageID)
+)
+
+Structure(ExtendConversation_Request,1,IMPS_1_1,NONE,
+ Item(id, ExtendConversationID)
+ Item(ulist,UserIDList)
+ Item(euser,ExtendConversationUser)
+ Item(snotify,SubscribeNotification)
+ Item(wnote,WelcomeNote)
+Item(sname,ScreenName)
+
+)
+Structure(CancelInviteUser_Request,1,IMPS_1_1,NONE,
+
+ Item(id,InviteID)
+ Item(sender,Sender)
+ Item(rcpt,Recipient)
+ Item(inote,InviteNote)
+ Item(appid,ApplicationID)
+ Item(gid,GroupID)
+ Item(pslist,PresenceSubList)
+ Item(url_list,URLList)
+ Item(sname,ScreenName)
+  
+)
+Structure(GetMap_Request,1,IMPS_1_1,NONE,
+
+
+  Union(u,UELEM(UserID) UELEM(PresenceSubList))
+)
+
+Structure(GetMap_Response,1,IMPS_1_1,NONE,
+
+
+  Union(u,UELEM(Map) UELEM(URL))
+)
+Structure(VerifyID_Request,1,IMPS_1_1,NONE,
+
+
+  Item(idlist,IDList)
+)
+Structure(GetList_Response,1,IMPS_1_1,NONE,
+
+
+  Item(clist,ContactListIDList) 
+  List(clist_11,ContactList) // v1.1 uses this.
+   Item(dlist, DefaultContactList)
+)
+
+Structure(CreateList_Request,1,IMPS_1_1,NONE,
+
+  Item(clist,ContactList)
+  Item(nlist, NickList)
+  Item(clist_prop, ContactListProperties)
+)
+
+Structure(CreateList_Response,1,IMPS_1_1,NONE,
+
+ Item(clist,ContactList)
+ Item(clist_prop, ContactListProperties)
+)
+Structure(DeleteList_Request,1,IMPS_1_1,NONE,
+
+
+  Item(clist,ContactList)
+)
+
+Structure(ListManage_Request,1,IMPS_1_1,NONE,
+
+Item(clist,ContactList)
+ Union(u, UELEM(AddNickList) UELEM(RemoveNickList) UELEM( ContactListProperties ))
+ Item(rl,ReceiveList)
+ Item(ag,AuthorizeAndGrant)
+)
+ 
+
+Structure(ListManage_Response,1,IMPS_1_1,NONE,
+
+
+  Item(res,Result) 
+  Item(nlist,NickList) 
+  Item(clist, ContactListProperties)
+)
+Structure(CreateAttributeList_Request,1,IMPS_1_1,NONE,
+
+  Item(pres,PresenceSubList)
+
+  Item(uidlist,UserIDList)  /* we must account for 1.3 and 1.2 syntax. */
+  List(ulist,UserID)
+
+  Item(cidlist, ContactListIDList)
+  List(clist,ContactList)  
+
+
+  Item(isdflt, DefaultList)
+  
+  Item(dfltNotify,DefaultNotify)   /* only 1.3 */
+  Item(uNotify,UserNotify)
+
+  Item(clNotify,ContactListNotify)
+)
+
+Structure(DeleteAttributeList_Request,1,IMPS_1_1,NONE,
+
+  Item(uidlist,UserIDList)
+  List(ulist,UserID)
+  
+  Item(cidlist, ContactListIDList)
+  List(clist,ContactList)  
+
+  Item(delDflt, DefaultList)
+)
+
+Structure(GetAttributeList_Request,1,IMPS_1_1,NONE,
+
+
+  Item(dlist,DefaultList)
+
+  Item (cidlist,ContactListIDList) /* differences in syntax, 1.2 and  1.3 */
+  List(clist,ContactList)
+
+  Item(uidlist, UserIDList)	
+  List(ulist,User)
+)
+
+Structure(GetAttributeList_Response,1,IMPS_1_1,NONE,
+
+
+  Item(res,Result)
+  Item ( dalist, DefaultAttributeList)
+  List(presence, Presence)
+)
+
+Structure(SubscribePresence_Request,1,IMPS_1_1,NONE,
+
+
+  Item(uidlist,UserIDList)
+  List(ulist,User)  /* difference in syntax 1.2, 1.3. */
+  
+  Item(cidlist, ContactListIDList)
+  List(clist, ContactList)
+
+  Item(plist, PresenceSubList)
+  Item(auto_sub,AutoSubscribe)
+)
+
+Structure(UnsubscribePresence_Request,1,IMPS_1_1,NONE,
+
+
+  Item(uidlist,UserIDList)
+ List(ulist,User)  /* difference in syntax 1.2, 1.3. */
+
+  Item(cidlist, ContactListIDList)
+  List(clist, ContactList)
+)
+Structure(PresenceNotification_Request,1,IMPS_1_1,NONE,
+
+  List(plist,Presence)
+)
+Structure(GetWatcherList_Request,1,IMPS_1_1,NONE,
+
+
+  Item(hperiod,HistoryPeriod)
+  Item(max_wlist, MaxWatcherList)
+)
+
+Structure(GetWatcherList_Response,1,IMPS_1_1,NONE,
+
+
+  Item(hperiod,HistoryPeriod)
+  Item(wcount, WatcherCount)
+  List(watcher,Watcher)
+  List(wusers,User)
+)
+
+Structure(_User_List,0,IMPS_1_1,NONE,
+	List(ulist,User)
+)
+
+Structure(_Contact_List,0,IMPS_1_1,NONE,
+	List(clist,ContactList)
+)
+
+Structure(GetPresence_Request,1,IMPS_1_1,NONE,
+
+  Union(u,UELEM(UserIDList) UELEM(ContactListIDList) 
+	 UELEM(_User_List)
+	 UELEM(_Contact_List)
+	 )
+  Item(pslist,PresenceSubList)
+)
+
+Structure(GetPresence_Response,1,IMPS_1_1,NONE,
+
+
+  Item(res,Result)
+  List(plist, Presence)
+)
+Structure(UpdatePresence_Request,1,IMPS_1_1,NONE,
+
+
+  Item(pslist,PresenceSubList)
+)
+
+/* Only in 1.1 and 1.2: PresenceAuthRequest and response */
+Structure(PresenceAuth_Request,1,IMPS_1_1,NONE,
+
+
+  Item(user,UserID)
+  Item(pslist,PresenceSubList)
+)
+
+Structure(PresenceAuth_User,1,IMPS_1_1,NONE,
+  Item(user,UserID)
+  Item(accept, Acceptance)
+  Item(pslist,PresenceSubList)
+)
+
+Structure(SendMessage_Request,1,IMPS_1_1,NONE,
+
+
+  Item(dreport,DeliveryReport)
+  Item(msginfo, MessageInfo)
+  Item(data, ContentData)
+)
+Structure(SendMessage_Response,1,IMPS_1_1,NONE,
+  Item(res,Result)
+  Item(msgid, MessageID)
+)
+Structure(SetDeliveryMethod_Request,1,IMPS_1_1,NONE,
+  Item(dmethod,DeliveryMethod)
+  Item(acceptlim, AcceptedContentLength)
+  Item(gid, GroupID)
+  Item(gclimit, GroupContentLimit)
+)
+Structure(GetMessageList_Request,1,IMPS_1_1,NONE,
+
+
+  Item(gid,GroupID)
+  Item(count, MessageCount)
+)
+
+
+Structure(GetMessageList_Response,1,IMPS_1_1,NONE,
+
+
+  Item(milist, MessageInfoList)
+  Item(count, MessageTotalCount)
+)
+Structure(RejectMessage_Request,1,IMPS_1_1,NONE,
+  List(mlist,MessageID)
+)
+Structure(NewMessage,1,IMPS_1_1,NONE,
+  Item(minfo,MessageInfo)
+ Item(data, ContentData)
+)
+Structure(MessageDelivered,1,IMPS_1_1,NONE,
+
+
+  Item(msgid,MessageID)
+)
+Structure(MessageNotification,1,IMPS_1_1,NONE,
+
+
+  Item(minfo,MessageInfo)
+)
+Structure(GetMessage_Request,1,IMPS_1_1,NONE,
+
+
+  Item(msgid, MessageID)
+)
+Structure(GetMessage_Response,1,IMPS_1_1,NONE,
+
+
+  Item(minfo,MessageInfo)
+  Item(data, ContentData)
+)
+Structure(DeliveryReport_Request,1,IMPS_1_1,NONE,
+
+  Item(res,Result)
+  Item(dtime, DeliveryTime)
+  Item(minfo, MessageInfo)
+)
+Structure(ForwardMessage_Request,1,IMPS_1_1,NONE,
+
+
+  Item(msgid,MessageID)
+  Item(sender, Sender)
+  Item(rcpt, Recipient)
+)
+
+Structure(CancelInvite_Request,1,IMPS_1_1,NONE,
+
+Item(invid,InviteID) 
+Item(sender,Sender) 
+Item(rcpt, Recipient) 
+Item(inote, InviteNote) 
+Item(appid, ApplicationID) 
+Item(gid, GroupID) 
+Item(pslist, PresenceSubList) 
+Item(ulist, URLList) 
+Item(sname, ScreenName)  
+)
+
+Structure(SystemMessage_User,1,IMPS_1_1,NONE,
+
+
+  Item(srlist,SystemMessageResponseList)
+)
+
+Structure(SubscribeNotification_Request,1,IMPS_1_1,NONE,
+
+
+  Item(ntlist,NotificationTypeList)
+)
+Structure(UnsubscribeNotification_Request,1,IMPS_1_1,NONE,
+
+
+  Item(ntlist,NotificationTypeList)
+)
+
+Structure(_Pres_List,0,IMPS_1_1,NONE,
+
+ Item(pslist,PresenceSubList)
+ Item(ulist, UserIDList)
+ Item(clist, ContactListIDList)
+ Item(dlist, DefaultList)
+)
+
+Structure(Notification_Request,1,IMPS_1_1,NONE,
+
+Item(ntype,NotificationType)
+ Union(u, UELEM(BlockListInUse)
+  UELEM (GrantListInUse)
+ UELEM(GroupID)
+ UELEM(ContactListIDList) 
+ UELEM(InviteID)
+ UELEM(OnlineETEMHandling)
+ UELEM(_Pres_List)
+
+UELEM( SessionPriority)
+UELEM( UserList )
+UELEM( UserIDPair) )
+
+)
+
+Structure(GetPublicProfile_Request,1,IMPS_1_1,NONE,
+
+
+  List(ulist,UserID)
+)
+Structure(GetPublicProfile_Response,1,IMPS_1_1,NONE,
+
+
+  Item(res,Result)
+  List(prof, PublicProfile)
+)
+
+Structure(UpdatePublicProfile_Request,1,IMPS_1_1,NONE,
+
+
+  Item(cprof,ClearPublicProfile)
+  Item(prof, PublicProfile)
+)
+
+Structure(Search_Request,1,IMPS_1_1,NONE,
+ List(slist,SearchPairList)
+ Item(acrit, AdvancedCriteria)
+ Item(slim, SearchLimit)
+ Item(id,SearchID)
+ Item(index,SearchIndex)
+)
+
+
+
+Structure(Search_Response,1,IMPS_1_1,NONE,
+
+ Item(id, SearchID)
+ Item(sfindings,SearchFindings)
+ Item(cflag,CompletionFlag)
+ Item(sidx,SearchIndex)
+ Item(sres,SearchResult)
+
+)
+Structure(StopSearch_Request,1,IMPS_1_1,NONE,
+
+
+  Item(id,SearchID)
+)
+Structure(Invite_Request,1,IMPS_1_1,NONE,
+
+ Item(invid,InviteID)
+ Item(invtype,InviteType)
+ Item(sender,Sender)
+ Item(rcpt,Recipient)
+ Item(appid,ApplicationID)
+ Item(gid,GroupID)
+ Item(pslist,PresenceSubList)
+ Item(url_list,URLList)
+ Item(inote,InviteNote)
+ Item(sname,ScreenName)
+ Item(valid,Validity)
+
+)
+
+Structure(Invite_Response,1,IMPS_1_1,NONE,
+
+Item(invid,InviteID)
+Item(accept, Acceptance) 
+Item(sender, Sender) 
+Item(rcpt, Recipient) 
+Item(inote, InviteNote) 
+Item(rnote, ResponseNote) // v1.1 and v1.2 use this.
+Item(sname, ScreenName)
+)
+
+Structure(InviteUser_Request,1,IMPS_1_1,NONE,
+Item(invid, InviteID)
+Item(itype,  InviteType)
+Item(sender,  Sender)
+Item(rcpt,  Recipient) 
+Item(appid,  ApplicationID)
+Item(gid, GroupID)
+Item(pslist,  PresenceSubList)
+Item(url_list,  URLList)
+Item(inote,  InviteNote) 
+Item(sname,  ScreenName) 
+Item(valid,  Validity)
+
+)
+Structure(InviteUser_Response,1,IMPS_1_1,NONE,
+
+
+Item(invid, InviteID) 
+Item(accept, Acceptance) 
+Item(sender, Sender) 
+Item(rcpt, Recipient) 
+Item(rnote, ResponseNote)
+Item(sname, ScreenName) 
+)
+
+
+Structure(Disconnect,1,IMPS_1_1,NONE,
+
+
+  Item(res,Result)
+)
+Structure(KeepAlive_Request,1,IMPS_1_1,NONE,
+
+
+  Item(ttl,TimeToLive)
+)
+Structure(KeepAlive_Response,1,IMPS_1_1,NONE,
+
+
+  Item(res,Result)
+  Item(ttl, KeepAliveTime)
+)
+Structure(GetSPInfo_Request,1,IMPS_1_1,NONE,
+
+
+  Item(id, ClientID)
+)
+Structure(GetSPInfo_Response,1,IMPS_1_1,NONE,
+
+
+  Item(id,ClientID)
+  Item(name, Name)
+  Item(logo,Logo)
+ Item(descr, Description)
+ Item(url, URL)
+)
+
+Structure(Service_Request,1,IMPS_1_1,NONE,
+  Item(clid,ClientID) // but not in ver > 1.1
+  Item(funcs,Functions)
+  Item(allfuncs, AllFunctionsRequest)
+)
+Structure(Service_Response,1,IMPS_1_1,NONE,
+  Item(clid,ClientID) // but not in ver > 1.1
+  Item(funcs,Functions)
+  Item(allfuncs, AllFunctions)
+)
+Structure(ClientCapability_Request,1,IMPS_1_1,NONE,
+  Item(clid, ClientID) // for v1.1 and below
+
+  Item(clist,CapabilityList)
+)
+Structure(ClientCapability_Response,1,IMPS_1_1,NONE,
+
+  Item(clid, ClientID) // in v1.1 ...
+  Union(aclist,UELEM(AgreedCapabilityList) // v1.1 differs from v1.2 onwards!
+		UELEM(CapabilityList)) 
+)
+Structure(GetSegment_Request,1,IMPS_1_1,NONE,
+
+
+  Item(sid,SegmentID)
+)
+Structure(GetSegment_Response,1,IMPS_1_1,NONE,
+
+
+  Item(sc,SegmentContent)
+)
+Structure(DropSegment_Request,1,IMPS_1_1,NONE,
+
+
+  Item(sid,SegmentID)
+)
+Structure(SystemMessage_Request,1,IMPS_1_1,NONE,
+
+
+  Item(smlist,SystemMessageList)
+)
+
+
+/*  XXX For some we'll leave out the XML tag and WBXML tag definition,
+ * which will mean  they only have contents. See the two below. 
+ */
+Structure(_SrchResult,0, IMPS_1_1, NONE,
+	Item(code,Code)
+	Item(descr,Description)
+	List(sl,SearchElement))
+
+Structure(_UserResult,0,IMPS_1_1, NONE,
+	List(users,UserID)
+	List(grps,GroupID)
+	List(snames,ScreenName)
+	List(msgid,MessageID)
+	List(clist,ContactList)
+	List(domains,Domain))
+
+
+Structure(DetailedResult,1, IMPS_1_1, NONE,
+	Item(code,Code)
+	Item(descr,Description)
+	Item(sres,_SrchResult)
+	Union(details,UELEM(_SrchResult) UELEM(_UserResult)))
+
+/* **** Presence Stuff (duplicates are commented out) ****/
+
+Basic(Qualifier,IMPS_1_1,NONE,Boolean)
+Basic(PresenceValue,IMPS_1_1,NONE,String)
+// Basic(AnyContent,IMPS_1_1,NONE,String)
+// Basic(AcceptedTextContentLength,IMPS_1_1,NONE,String)
+// Basic(AcceptedTransferEncoding,IMPS_1_1,NONE,String)
+Basic(MaxPullLength,IMPS_1_1,NONE,String)
+Basic(MaxPushLength,IMPS_1_1,NONE,String)
+// Basic(PlainTextCharset,IMPS_1_1,NONE,String)
+// Basic(AcceptedRichContentLength,IMPS_1_1,NONE,String)
+// Basic(ContentPolicy,IMPS_1_1,NONE,String)
+// Basic(ContentPolicyLimit,IMPS_1_1,NONE,String)
+// Basic(ClientType,IMPS_1_1,NONE,String)
+Basic(DevManufacturer,IMPS_1_1,NONE,String)
+Basic(ClientProducer,IMPS_1_1,NONE,String)
+Basic(Model,IMPS_1_1,NONE,String)
+Basic(ClientVersion,IMPS_1_1,NONE,String)
+Basic(Language,IMPS_1_1,NONE,String)
+Basic(Zone,IMPS_1_1,NONE,String)
+Basic(ClientIMPriority,IMPS_1_1,NONE,Integer)
+// Basic(ApplicationID,IMPS_1_1,NONE,String)
+Basic(Longitude,IMPS_1_1,NONE,String)
+Basic(Latitude,IMPS_1_1,NONE,String)
+Basic(Altitude,IMPS_1_1,NONE,String)
+Basic(Accuracy,IMPS_1_1,NONE,String)
+Basic(Country,IMPS_1_1,NONE,String)
+Basic(City,IMPS_1_1,NONE,String)
+Basic(Street,IMPS_1_1,NONE,String)
+Basic(Crossing1,IMPS_1_1,NONE,String)
+Basic(Crossing2,IMPS_1_1,NONE,String)
+Basic(Building,IMPS_1_1,NONE,String)
+Basic(NamedArea,IMPS_1_1,NONE,String)
+Basic(Cap,IMPS_1_1,NONE,String)
+// Basic(Status,IMPS_1_1,NONE,String)
+Basic(Contact,IMPS_1_1,NONE,String)
+Basic(Note,IMPS_1_1,NONE,String)
+Basic(PrefC,IMPS_1_1,NONE,String)
+Basic(Caddr,IMPS_1_1,NONE,String)
+Basic(Cstatus,IMPS_1_1,NONE,String)
+Basic(Cname,IMPS_1_1,NONE,String)
+Basic(Cpriority,IMPS_1_1,NONE,String)
+Basic(DirectContent,IMPS_1_1,NONE,String)
+Basic(ReferredContent,IMPS_1_1,NONE,String)
+Basic(ContainedvCard,IMPS_1_1,NONE,String)
+Basic(ReferredvCard,IMPS_1_1,NONE,String)
+Basic(Link,IMPS_1_1,NONE,String)
+Basic(Text,IMPS_1_1,NONE,String)
+// Basic(ContentType,IMPS_1_1,NONE,String)
+
+Structure(PresenceSubList,1,IMPS_1_1, ATTRIBUTES(ATTR(xmlns)),
+
+
+  List(ostatus,OnlineStatus)
+  List(reg,Registration)
+  List(cinfo, ClientInfo)
+  List(tzone, TimeZone)
+  List(gloc, GeoLocation)
+ List(addr,Address)
+ List(txtloc, FreeTextLocation)
+ List(plmn, PLMN)
+ List(commcap, CommCap)
+ Item(avail, UserAvailability)
+ Item(prefcontact, PreferredContacts)
+Item(preflang,PreferredLanguage)
+ Item(status_txt, StatusText)
+Item(status_mood, StatusMood)
+Item(alias, Alias)
+Item(status_content, StatusContent)
+Item(contact_info, ContactInfo)
+Item(info_link,InfoLink)
+)
+
+Structure(OnlineStatus,1,IMPS_1_1,NONE,
+
+
+  Item(qual,Qualifier)
+ Item(pvalue, PresenceValue)
+ Item(client, ClientID)
+)
+Structure(Registration,1,IMPS_1_1,NONE,
+
+  Item(qual,Qualifier)
+ Item(pvalue, PresenceValue)
+ Item(client,ClientID)
+)
+Structure(FreeTextLocation,1,IMPS_1_1,NONE,
+  Item(qual,Qualifier)
+ Item(pvalue, PresenceValue)
+ Item(client,ClientID)
+
+)
+Structure(PLMN,1,IMPS_1_1,NONE,
+
+  Item(qual,Qualifier)
+ Item(pvalue, PresenceValue)
+ Item(client,ClientID)
+
+)
+Structure(UserAvailability,1,IMPS_1_1,NONE,
+
+  Item(qual,Qualifier)
+ Item(pvalue, PresenceValue)
+
+
+)
+Structure(PreferredLanguage,1,IMPS_1_1,NONE,
+
+  Item(qual,Qualifier)
+ Item(pvalue, PresenceValue)
+
+
+)
+Structure(StatusText,1,IMPS_1_1,NONE,
+
+
+  Item(qual,Qualifier)
+ Item(pvalue, PresenceValue)
+
+
+)
+Structure(StatusMood,1,IMPS_1_1,NONE,
+
+  Item(qual,Qualifier)
+ Item(pvalue, PresenceValue)
+
+
+)
+Structure(Alias,1,IMPS_1_1,NONE,
+
+  Item(qual,Qualifier)
+ Item(pvalue, PresenceValue)
+
+)
+Structure(TimeZone,1,IMPS_1_1,NONE,
+
+  Item(qual,Qualifier)
+ Item(zone, Zone)
+ Item(client,ClientID)
+)
+
+Structure(ClientInfo,1,IMPS_1_1,NONE,
+
+Item(qual,Qualifier) 
+Item(cclimit,ClientContentLimit)
+Item(ctype, ClientType)
+Item(devmanufacturer, DevManufacturer)
+Item(cproducer,ClientProducer)
+Item(model, Model)
+Item(cversion, ClientVersion)
+Item(lang, Language)
+Item(cim_prio, ClientIMPriority)
+Item(appid, ApplicationID)
+Item(client,ClientID)
+)
+
+Structure(ClientContentLimit,1,IMPS_1_1,NONE,
+
+ List(ctypes,AcceptedContentType) /* real syntax is slightly different. */
+ Item(ctype_all,AnyContent)
+
+ Item(atxt_clen, AcceptedTextContentLength)
+ List(te,AcceptedTransferEncoding)
+ Item(max_pull, MaxPullLength)
+ Item(max_push,MaxPushLength)
+ List(pt_charset, PlainTextCharset)
+
+)
+
+/* acceptedContentType is already part of CSP */
+Structure(GeoLocation,1,IMPS_1_1,NONE,
+
+
+  Item(qual,Qualifier)
+ Item(longt, Longitude) 
+ Item(lat,Latitude)
+ Item(alt, Altitude)
+ Item(acc, Accuracy)
+ Item(client, ClientID)
+)
+
+Structure(Address,1,IMPS_1_1,NONE,
+
+
+  Item(qual,Qualifier)
+  Item(country, Country)
+ Item(city, City)
+ Item(street,Street)
+ Item(cross1, Crossing1)
+ Item(cross2, Crossing2)
+ Item(bldg, Building)
+)
+
+Structure(CommCap,1,IMPS_1_1,NONE,
+
+
+  Item(qual,Qualifier)
+  List(commc, CommC)
+  Item(client, ClientID)
+)
+
+Structure(CommC,1,IMPS_1_1,NONE,
+
+
+ Item(cap,Cap)
+ Item(status, Status)
+ Item(contact, Contact)
+ Item(note, Note)
+)
+Structure(PreferredContacts,1,IMPS_1_1,NONE,
+
+  Item(qual,Qualifier)
+  List(addrpref, AddrPref)
+)
+
+Structure(AddrPref,1,IMPS_1_1,NONE,
+
+
+  Item(prefc,PrefC)
+  Item(caddr, Caddr)
+  Item(cstatus, Cstatus)
+  Item(cname, Cname)
+  Item(cprio,Cpriority)
+)
+
+Structure(StatusContent,1,IMPS_1_1,NONE,
+
+
+  Item(qual,Qualifier)
+ Union(c, UELEM(DirectContent) 
+         UELEM(ReferredContent)) /* syntax slightly different. */
+ Item(ctype, ContentType)
+)
+
+Structure(ContactInfo,1,IMPS_1_1,NONE,
+
+
+  Item(qual,Qualifier)
+  Union(vcard,UELEM(ContainedvCard) UELEM(ReferredvCard))
+)
+Structure(InfoLink,1,IMPS_1_1,NONE,
+
+
+  Item(qual,Qualifier)
+ List(info_link, Inf_link)
+)
+Structure(Inf_link,1,IMPS_1_1,NONE,
+
+
+  Item(link,Link)
+ Item(txt, Text)
+ Item(ctype, ContentType)
+)
