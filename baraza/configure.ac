@@ -113,8 +113,8 @@ fi
 dnl look for resolver lib. The problem here is that the .a exports
 dnl different symbols from the .so -- which is bizarre
 
-AC_ARG_WITH(resolv,
-[ --with-libresolv-dir[=DIR]  where to find libresolv.a
+AC_ARG_WITH(libresolv-dir,
+[ --with-libresolv-dir=DIR  where to find libresolv.a
   			  DIR points to installation [/usr/lib]],
 [ if test -d "$withval"  && test -r "$withval/libresolv.${LIB_EXT}"; then
     resolvlib="$withval/libresolv.${LIB_EXT}";
@@ -130,7 +130,7 @@ dnl check for libresolv
 if test "x$resolvlib" = "x"; then
    found=""
 
-   for loc in /usr/lib /lib /usr/local/lib; do
+   for loc in /usr/lib /lib /usr/local/lib /usr/lib64; do
        if test "x$found" = "x"; then
        	  AC_MSG_CHECKING([For libresolv.${LIB_EXT} in])
 	  AC_MSG_RESULT($loc)

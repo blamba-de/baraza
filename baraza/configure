@@ -915,7 +915,7 @@ with_tags
 with_cflags
 with_libs
 enable_largefile
-with_resolv
+with_libresolv_dir
 with_ssl
 enable_ssl_thread_test
 with_kannel_dir
@@ -21734,9 +21734,9 @@ fi
 
 
 
-# Check whether --with-resolv was given.
-if test "${with_resolv+set}" = set; then
-  withval=$with_resolv;  if test -d "$withval"  && test -r "$withval/libresolv.${LIB_EXT}"; then
+# Check whether --with-libresolv-dir was given.
+if test "${with_libresolv_dir+set}" = set; then
+  withval=$with_libresolv_dir;  if test -d "$withval"  && test -r "$withval/libresolv.${LIB_EXT}"; then
     resolvlib="$withval/libresolv.${LIB_EXT}";
     LIBS="$LIBS $resolvlib";
 
@@ -21754,7 +21754,7 @@ fi
 if test "x$resolvlib" = "x"; then
    found=""
 
-   for loc in /usr/lib /lib /usr/local/lib; do
+   for loc in /usr/lib /lib /usr/local/lib /usr/lib64; do
        if test "x$found" = "x"; then
        	  { $as_echo "$as_me:$LINENO: checking For libresolv.${LIB_EXT} in" >&5
 $as_echo_n "checking For libresolv.${LIB_EXT} in... " >&6; }
