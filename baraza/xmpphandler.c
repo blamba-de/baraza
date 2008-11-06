@@ -25,7 +25,6 @@
 GCRY_THREAD_OPTION_PTHREAD_IMPL;   /* required by gnutls. */
 #include "dns.h"
 #include "utils.h"
-#include "connpoll.h"
 #include "mqueue.h"
 
 #include "xmpphandler.h"

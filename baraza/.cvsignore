@@ -7,8 +7,6 @@
 .gdb_history
 mpeg2dec-*.tar.gz
 Makefile
-Makefile.in
-configure
 .deps
 .libs
 aclocal.m4
@@ -19,7 +17,6 @@ config.status
 gmon.out
 autom4te.cache
 baraza-config.h
-baraza-config.h.in
 .cproject
 .project
 stamp-h1
