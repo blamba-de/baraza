@@ -391,7 +391,7 @@ Status_t handle_delete_list(RequestInfo_t *ri, DeleteList_Request_t req)
      
      
      sprintf(cmd, 
-	     "DELETE FROM contactlists WHERE userid=%lld AND cid=%lld RETURNING isdefault",
+	     "DELETE FROM contactlists WHERE userid=%lld AND id=%lld RETURNING isdefault",
 	     uid, cid);
 	
      r = PQexec(c, cmd);

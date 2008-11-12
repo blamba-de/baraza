@@ -36,7 +36,7 @@ PRE_UNINSTALL = :
 POST_UNINSTALL = :
 build_triplet = @build@
 host_triplet = @host@
-bin_PROGRAMS = barazad$(EXEEXT)
+bin_PROGRAMS = barazad$(EXEEXT) impsxml2json$(EXEEXT)
 DIST_COMMON = README $(am__configure_deps) $(srcdir)/Makefile.am \
 	$(srcdir)/Makefile.in $(srcdir)/baraza-config.h.in \
 	$(top_srcdir)/configure AUTHORS COPYING ChangeLog INSTALL NEWS \
@@ -64,6 +64,13 @@ am_barazad_OBJECTS = main.$(OBJEXT) cspd.$(OBJEXT) sspd.$(OBJEXT) \
 	xmpphandler.$(OBJEXT) dns.$(OBJEXT) scserver.$(OBJEXT)
 barazad_OBJECTS = $(am_barazad_OBJECTS)
 barazad_LDADD = $(LDADD)
+am_impsxml2json_OBJECTS = impsxml2json.$(OBJEXT) json.$(OBJEXT) \
+	cspmessages.$(OBJEXT) utils.$(OBJEXT) wbxml.$(OBJEXT) \
+	cspim.$(OBJEXT) csppresence.$(OBJEXT) cspcommon.$(OBJEXT) \
+	mqueue.$(OBJEXT) cspgroup.$(OBJEXT) cspcir.$(OBJEXT) \
+	pgconnpool.$(OBJEXT) sspd.$(OBJEXT)
+impsxml2json_OBJECTS = $(am_impsxml2json_OBJECTS)
+impsxml2json_LDADD = $(LDADD)
 DEFAULT_INCLUDES = -I. -I$(srcdir) -I.
 depcomp = $(SHELL) $(top_srcdir)/autotools/depcomp
 am__depfiles_maybe = depfiles
@@ -75,8 +82,8 @@ LTCOMPILE = $(LIBTOOL) --tag=CC --mode=compile $(CC) $(DEFS) \
 CCLD = $(CC)
 LINK = $(LIBTOOL) --tag=CC --mode=link $(CCLD) $(AM_CFLAGS) $(CFLAGS) \
 	$(AM_LDFLAGS) $(LDFLAGS) -o $@
-SOURCES = $(barazad_SOURCES)
-DIST_SOURCES = $(barazad_SOURCES)
+SOURCES = $(barazad_SOURCES) $(impsxml2json_SOURCES)
+DIST_SOURCES = $(barazad_SOURCES) $(impsxml2json_SOURCES)
 ETAGS = etags
 CTAGS = ctags
 DISTFILES = $(DIST_COMMON) $(DIST_SOURCES) $(TEXINFOS) $(EXTRA_DIST)
@@ -199,6 +206,7 @@ sharedstatedir = @sharedstatedir@
 sysconfdir = @sysconfdir@
 target_alias = @target_alias@
 barazad_SOURCES = main.c cspd.c  sspd.c cspcir.c json.c utils.c cspcommon.c pgconnpool.c cspmessages.c mqueue.c csppresence.c cspim.c cspgroup.c conf.c wbxml.c ssphandler.c sspmessages.c xmpphandler.c dns.c scserver.c baraza.h csp.h cspgroup.h csppresence.h mqueue.h  sspmessages.h xmpphandler.h conf.h cspcir.h cspim.h dns.h pgconnpool.h ssp.h utils.h cspcommon.h cspmessages.h	json.h scserver.h ssphandler.h	wbxml.h
+impsxml2json_SOURCES = impsxml2json.c json.c json.h cspmessages.c cspmessages.h utils.c utils.h wbxml.c  cspim.c  csppresence.c  cspcommon.c  mqueue.c cspgroup.c  cspcir.c pgconnpool.c sspd.c
 EXTRA_DIST = tables.sql cspmessages.def wbxml.def LICENSE VERSION
 all: baraza-config.h
 	$(MAKE) $(AM_MAKEFLAGS) all-am
@@ -286,6 +294,9 @@ clean-binPROGRAMS:
 barazad$(EXEEXT): $(barazad_OBJECTS) $(barazad_DEPENDENCIES) 
 	@rm -f barazad$(EXEEXT)
 	$(LINK) $(barazad_LDFLAGS) $(barazad_OBJECTS) $(barazad_LDADD) $(LIBS)
+impsxml2json$(EXEEXT): $(impsxml2json_OBJECTS) $(impsxml2json_DEPENDENCIES) 
+	@rm -f impsxml2json$(EXEEXT)
+	$(LINK) $(impsxml2json_LDFLAGS) $(impsxml2json_OBJECTS) $(impsxml2json_LDADD) $(LIBS)
 
 mostlyclean-compile:
 	-rm -f *.$(OBJEXT)
@@ -302,6 +313,7 @@ distclean-compile:
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/cspmessages.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/csppresence.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/dns.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/impsxml2json.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/json.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/main.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/mqueue.Po@am__quote@
