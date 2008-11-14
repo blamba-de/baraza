@@ -86,7 +86,7 @@ static int conf_init(struct imps_conf_t * config)
      snprintf(config->logdir, sizeof config->logdir, "/var/log");
 
      config->http_port = 80;
-     strcpy(config->cir_ip, "0.0.0.0");
+     strcpy(config->myhostname, "localhost");
      config->cir_stcp_port = 8080;
      config->external_http_port = -1;
      ctime_r(&t, config->nonce_salt);
@@ -313,7 +313,9 @@ int parse_conf(FILE *f, struct imps_conf_t *config)
 	  log_open(buf, loglevel, GW_NON_EXCL);
 	  
      }
-     
+     if (config->cir_ip[0] == 0)
+	  strncpy(config->cir_ip, config->myhostname, sizeof config->cir_ip);
+
      if (config->external_http_port<0)
 	  config->external_http_port = config->http_port;
      
