@@ -2332,7 +2332,7 @@ static void xmpp2csp_trans(PGconn *c, iks *node, XMPPConn_t *xconn)
 			 
 			 r.c = c;
 			 r.req_ip = ip;
-			 r.xsessid = xconn->id ? xconn->id : "001-xmpp";
+			 strncpy(r.xsessid,  xconn->id ? xconn->id : "001-xmpp", sizeof r.xsessid);
 			 r.is_ssp = 1;
 			 r.uid = r.sessid = -1;
 			 r.ver = CSP_VERSION(1,3); /* we lie! */

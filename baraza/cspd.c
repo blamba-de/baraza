@@ -159,7 +159,8 @@ static void request_handler(List *req_list)
 	       
 	       ri->ver = cspver; 
 	       ri->req_ip = r->ip;
-	       ri->xsessid = sid;
+	       strncpy(ri->xsessid,  sid ? sid : "", sizeof ri->xsessid);
+
 	       ri->c = c;
 	       ri->conf = config; /* record conf data. */
 	       ri->is_ssp = 0;

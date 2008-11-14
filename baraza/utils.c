@@ -582,7 +582,7 @@ static int get_session_id_real(PGconn *c, char *fld, char *val, RequestInfo_t *r
      sprintf(cmd, "UPDATE sessions SET lastt = current_timestamp %s %s WHERE  %s = '%.128s' "
 	     "RETURNING  id, userid, clientid,default_notify, pull_len, push_len, deliver_method, "
 	     " (SELECT full_userid FROM users_view WHERE  users_view.id = sessions.userid), "
-	     " cookie,csp_version,ttl,cir , msisdn, request_ip",
+	     " cookie,csp_version,ttl,cir , msisdn, request_ip, sessionid",
 	     tmp2, tmp3,     fld, tmp1);
      r = PQexec(c, cmd);
      if (PQresultStatus(r) != PGRES_TUPLES_OK || PQntuples(r) < 1) {
@@ -611,6 +611,10 @@ static int get_session_id_real(PGconn *c, char *fld, char *val, RequestInfo_t *r
 	  req->msisdn = ((x = PQgetvalue(r, 0, 12)) != NULL && x[0]) ? octstr_create(x) : NULL;
      if (req->client_ip == NULL)
 	  req->client_ip = ((x = PQgetvalue(r, 0, 13)) != NULL && x[0]) ? octstr_create(x) : NULL;
+
+     if (req->xsessid[0] == 0) 
+	  strncpy(req->xsessid, PQgetvalue(r, 0, 14), sizeof req->xsessid); 
+     
      PQclear(r);
 
      return 0;

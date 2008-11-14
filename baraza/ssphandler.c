@@ -586,7 +586,7 @@ static List *do_trans(PGconn *c, xmlNodePtr transchild, int mode, char *trans, c
 	       
 	       r.c = c;
 	       r.req_ip = ip;
-	       r.xsessid = sessid;
+	       strncpy(r.xsessid, sessid, sizeof r.xsessid);
 	       r.is_ssp = 1;
 	       r.uid = r.sessid = -1;
 	       r.ver = CSP_VERSION(1,3); /* we lie! */

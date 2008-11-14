@@ -75,7 +75,7 @@
 typedef struct RequestInfo_t {
      int64_t uid;    /* the user who's session it is. (CSP only.) */
      int64_t sessid; /* the sessid ID in the DB. (CSP only) */
-     char    *xsessid;  /* the original text session ID as given. */     
+     char    xsessid[128];  /* the original text session ID as given. */     
 
      Octstr  *req_ip; /* IP address from which request received. */
      Octstr  *client_ip;  /* client request IP */

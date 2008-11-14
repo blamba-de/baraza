@@ -390,7 +390,7 @@ static char *table_cmds[] = {
 ,
 "CREATE TABLE group_members (\n"
 "   id bigserial PRIMARY KEY,\n"
-"  groupid bigint NOT NULL REFERENCES groups ON UPDATE CASCADE ON DELETE RESTRICT,\n"
+"  groupid bigint NOT NULL REFERENCES groups ON UPDATE CASCADE ON DELETE CASCADE,\n"
 "  -- info (either one of userid or foreign_userid is set)\n"
 "  local_userid bigint REFERENCES users ON UPDATE CASCADE ON DELETE CASCADE,\n"
 "  foreign_userid text CHECK (foreign_userid IS NOT NULL OR local_userid IS NOT NULL),\n"
@@ -423,7 +423,7 @@ static char *table_cmds[] = {
 ,
 "CREATE TABLE group_reject_list (\n"
 "	id bigserial PRIMARY KEY,\n"
-"	groupid bigint NOT NULL REFERENCES groups ON UPDATE CASCADE ON DELETE RESTRICT,\n"
+"	groupid bigint NOT NULL REFERENCES groups ON UPDATE CASCADE ON DELETE CASCADE,\n"
 "  -- member info (either one of userid or foreign_userid is set)\n"
 "       local_userid bigint REFERENCES users ON UPDATE CASCADE ON DELETE CASCADE,\n"
 "       foreign_userid text CHECK (foreign_userid IS NOT NULL OR local_userid IS NOT NULL),\n"

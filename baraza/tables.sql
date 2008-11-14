@@ -137,7 +137,7 @@ SELECT 'wv:'|| (case when domain = '' then groupid else groupid || '@' || domain
 CREATE TABLE group_members (
    id bigserial PRIMARY KEY,
 
-  groupid bigint NOT NULL REFERENCES groups ON UPDATE CASCADE ON DELETE RESTRICT,
+  groupid bigint NOT NULL REFERENCES groups ON UPDATE CASCADE ON DELETE CASCADE,
 
   -- info (either one of userid or foreign_userid is set)
   local_userid bigint REFERENCES users ON UPDATE CASCADE ON DELETE CASCADE,
@@ -175,7 +175,7 @@ CREATE TABLE group_member_properties (
 CREATE TABLE group_reject_list (
 	id bigserial PRIMARY KEY,
 
-	groupid bigint NOT NULL REFERENCES groups ON UPDATE CASCADE ON DELETE RESTRICT,
+	groupid bigint NOT NULL REFERENCES groups ON UPDATE CASCADE ON DELETE CASCADE,
 
   -- member info (either one of userid or foreign_userid is set)
        local_userid bigint REFERENCES users ON UPDATE CASCADE ON DELETE CASCADE,

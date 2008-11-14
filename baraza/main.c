@@ -248,7 +248,7 @@ static void cleanup_thread(void *unused)
 	  for (i = 0; i<n; i++) {
 	       RequestInfo_t _ri = {0}, *ri = &_ri;
 	       char *sid = PQgetvalue(r, i, 0);
-	       ri->xsessid = sid;
+	       strncpy(ri->xsessid, sid ? sid : "x", sizeof ri->xsessid);
 	       ri->c = c;
 	       ri->is_ssp = 0;
 	       ri->ver = CSP_VERSION(1,3);	       

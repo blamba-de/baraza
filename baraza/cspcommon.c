@@ -255,7 +255,7 @@ Login_Response_t handle_login(RequestInfo_t *ri, Login_Request_t req)
 	  
 	  ri->uid = uid; /* set new UID and session id */
 	  ri->sessid = xsid;
-	  ri->xsessid = s ? octstr_get_cstr(s) : "";
+	  strncpy(ri->xsessid, s ? octstr_get_cstr(s) : "", sizeof ri->xsessid);
 	  if (ri->clientid) 
 	       octstr_destroy(ri->clientid);
 	  ri->clientid = octstr_duplicate(clid);
@@ -1289,7 +1289,7 @@ static void *handle_capabilitylist(PGconn *c, CapabilityList_t cl,
 	  Octstr *salt = make_salt(ri);
 	  
 	  sprintf(xid, "%lld", ri->sessid);
-	  url = octstr_format("http://%s:%d%s%S/%s", ri->conf->cir_ip, 
+	  url = octstr_format("http://%s:%d%s/%S/%s", ri->conf->cir_ip, 
 			      ri->conf->external_http_port, CIR_URI, salt, xid);	  
 	  if (ri->ver == CSP_VERSION(1,2))
 	       cir_url = csp_msg_new(CIRURL, NULL,
