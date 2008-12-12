@@ -73,16 +73,21 @@ static void cir_http_request_handler(List *req_list)
 	  char *xurl = octstr_get_cstr(r->uri);
 	  char *x, *xsess = (x = strrchr(xurl, '/')) ? x+1 : "";
 	  char *salt = get_salt(xurl, buf);
+	  int http_res = 204;
 	  PGconn *c = pg_cp_get_conn(); /* acquire a connection for our transaction. */
-	  int64_t sid = strtoull(xsess, NULL, 10);
-	  int res = get_session_info(c, sid, &ri);
-	  int chk = (res == 0) ? check_salt(&ri, salt) : -1;
-	  int http_res = (res == 0 && chk == 0 && 
-			  has_pending_msgs(c, ri.uid, ri.clientid, 
-					   ri.conf->min_ttl,
-					   ri.conf->max_ttl) == 1) ? 200 : 204;
 
-	  pg_cp_return_conn(c); /* give back the connection. */
+	  if (c != NULL) {
+	       int64_t sid = strtoull(xsess, NULL, 10);
+	       int res = get_session_info(c, sid, &ri);
+	       int chk = (res == 0) ? check_salt(&ri, salt) : -1;
+	       http_res = (res == 0 && chk == 0 && 
+			   has_pending_msgs(c, ri.uid, ri.clientid, 
+					    ri.conf->min_ttl,
+					    ri.conf->max_ttl) == 1) ? 200 : 204;
+	       
+	       pg_cp_return_conn(c); /* give back the connection. */
+	  } else 
+	       error(0, "cspcir.http: Failed to get DB connection!");
 	  
 	  http_send_reply(r->c, http_res,  rh, octstr_imm(""));
 	  

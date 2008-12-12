@@ -146,7 +146,7 @@ static void request_handler(List *req_list)
 	   * getting data back, building reply transaction. 
 	   */
 
-	  if (req->sess) {
+	  if (req && req->sess) {
 	       RequestInfo_t _ri = {0}, *ri = &_ri;
 	       Session_t sess;
 	       SessionDescriptor_t sessid;
