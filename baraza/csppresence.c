@@ -1774,7 +1774,7 @@ static void do_pres_req_notify(PGconn *c, Sender_t sender,
 	  PresenceSubList_t p = build_pres_element(attribs, CSP_VERSION(1,3)); 
 	  NotificationType_t n = csp_String_from_cstr("ANU", Imps_NotificationType);
 	  UserIDList_t ul = csp_msg_new(UserIDList, NULL,
-					FV(ul, gwlist_create_ex(csp_msg_copy(watcher_user))));
+					FV(ulist, gwlist_create_ex(csp_msg_copy(watcher_user))));
 					
 	  _Pres_List_t pl = csp_msg_new(_Pres_List,NULL,
 					FV(pslist, p),
