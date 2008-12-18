@@ -1712,9 +1712,9 @@ static int ignore_error_for_msg_type(int type)
 }
 
 static Octstr *make_result_stanza_from_code(PGconn *c, int code, char *descr, void *orig_msg, 
-				   char *orig_id,
-				   char *tag, char *from, 
-				   List *rcptlist)
+					    char *orig_id,
+					    char *tag, char *from, 
+					    List *rcptlist)
 {
      Octstr *res;
      if (!CSP_SUCCESS(code)) {
@@ -1730,7 +1730,7 @@ static Octstr *make_result_stanza_from_code(PGconn *c, int code, char *descr, vo
 	  else if (orig_msg)
 	       res = csp2xmpp_msg(c, orig_msg, NULL, from, orig_id, NULL, x);
 	  else if (tag)
-	       res = octstr_format("<%s type='error' to='%s'>%S</%s>", tag, from, x);
+	    res = octstr_format("<%s type='error' to='%s'>%S</%s>", tag, from, x, tag);
 	  else 
 	       res = NULL;
 	  octstr_destroy(x);

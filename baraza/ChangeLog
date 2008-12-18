@@ -1,3 +1,5 @@
+2008-12-18 P. A. Bagyenda <bagyenda@dsmagic.com>
+	* Fixed crash in xmpphandler
 2008-12-12 P. A. Bagyenda <bagyenda@dsmagic.com>
 	* Fixed crash in csppresence
 	* Fixed crash in cir_http module when connection empty
