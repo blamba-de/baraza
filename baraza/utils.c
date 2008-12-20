@@ -22,6 +22,7 @@
 #include "cspgroup.h"
 #include "mqueue.h"
 #include "conf.h"
+#include "baraza.h"
 
 List *gwlist_create_ex_real(const char *file, const char *func, int line,...)
 {
@@ -560,6 +561,12 @@ static int get_session_id_real(PGconn *c, char *fld, char *val, RequestInfo_t *r
      char tmp1[DEFAULT_BUF_LEN], tmp2[2*DEFAULT_BUF_LEN], tmp3[2*DEFAULT_BUF_LEN], cmd[1024], *x;
      int major = 1, minor = 1;
      
+     if (c == NULL || PQstatus(c) != CONNECTION_OK)
+	  return -1;
+
+     if (req->conf == NULL)
+	  req->conf = config; /* Get a copy of the conf. */
+
      /* verify the session. */
      PQ_ESCAPE_STR(c, val, tmp1);
 

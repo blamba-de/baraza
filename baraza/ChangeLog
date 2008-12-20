@@ -1,3 +1,5 @@
+2008-12-20 P. A. Bagyenda <bagyenda@dsmagic.com>
+	* Fixed crash in cspcir module
 2008-12-18 P. A. Bagyenda <bagyenda@dsmagic.com>
 	* Fixed crash in xmpphandler
 2008-12-12 P. A. Bagyenda <bagyenda@dsmagic.com>
