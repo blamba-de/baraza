@@ -451,6 +451,7 @@ _fct++;
     void *attrib = NULL, *_dat;						\
     unsigned long _fct = 0;						\
     if (!msg) return NULL;						\
+    gw_assert(CSP_MSG_TYPE(msg) == Imps_##xname);			\
     s = octstr_create("");						\
     attr								\
       _dat = hastag ? PACK_MSG_START(#xname,binary) : NULL;		\

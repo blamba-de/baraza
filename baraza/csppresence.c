@@ -1138,7 +1138,7 @@ static int send_user_presence(PGconn *c, int64_t source_uid, unsigned long attri
 	       if (single_rcpt->type == Pres_LocalUser) {
 		    lu.uid = watcher_local;
 		    
-		    queue_local_msg_add(c, pn, Imps_PresenceNotification_Request, NULL, &lu, 1,
+		    queue_local_msg_add(c, pn,  NULL, &lu, 1,
 					0, NULL, NULL,
 					time(NULL) + SHORT_EXPIRY);  	   
 	       } else {
@@ -1147,7 +1147,7 @@ static int send_user_presence(PGconn *c, int64_t source_uid, unsigned long attri
 		    
 		    extract_id_and_domain(fu, xid, xdomain);
 		    
-		    queue_foreign_msg_add(c, pn, Imps_PresenceNotification_Request, NULL, 
+		    queue_foreign_msg_add(c, pn, NULL, 
 					  source_uid, NULL,
 					  NULL, xdomain, l,
 					  CSP_VERSION(1,2),
@@ -1205,14 +1205,14 @@ static int send_user_presence(PGconn *c, int64_t source_uid, unsigned long attri
 	       lu.uid = xuid;	       
 	       if (clid)
 		    strncpy(lu.clientid, clid, sizeof lu.clientid);
-	       queue_local_msg_add(c, pn, Imps_PresenceNotification_Request, NULL, &lu, 1, 
+	       queue_local_msg_add(c, pn,  NULL, &lu, 1, 
 				   0, NULL, NULL,
 				   time(NULL) + DEFAULT_EXPIRY);
 	  } else {
 	       List *l = gwlist_create_ex(csp_String_from_cstr(fu, Imps_UserID));
 	       
 	       extract_id_and_domain(fu, xid, xdomain);
-	       queue_foreign_msg_add(c, pn, Imps_PresenceNotification_Request, NULL, 
+	       queue_foreign_msg_add(c, pn,  NULL, 
 				     source_uid, NULL, NULL, 
 				     xdomain, l, 
 				     CSP_VERSION(1,2),
@@ -1759,7 +1759,7 @@ static void do_pres_req_notify(PGconn *c, Sender_t sender,
 	       
 	       x.uid = watched_uid;
 	       
-	       queue_local_msg_add(c, req, Imps_PresenceAuth_Request, sender, &x, 1, 
+	       queue_local_msg_add(c, req,  sender, &x, 1, 
 				   0, NULL, NULL,
 				   time(NULL) + DEFAULT_EXPIRY);
 	       
@@ -1786,7 +1786,7 @@ static void do_pres_req_notify(PGconn *c, Sender_t sender,
 	  struct QLocalUser_t x = {0};	  
 	  x.uid = watched_uid;
 	  
-	  queue_local_msg_add(c, req, Imps_Notification_Request, sender, &x, 1,
+	  queue_local_msg_add(c, req, sender, &x, 1,
 			      0, NULL, NULL,
 			      time(NULL) + DEFAULT_EXPIRY);	  
 	  csp_msg_free(req);	 	  
@@ -2079,7 +2079,7 @@ Status_t handle_pres_subscribe(RequestInfo_t *ri, SubscribePresence_Request_t re
 	  }
 #endif
 	  
-	  queue_foreign_msg_add(c, sp, Imps_SubscribePresence_Request, st,
+	  queue_foreign_msg_add(c, sp, st,
 				uid, clientid ? octstr_get_cstr(clientid) :  NULL,
 				NULL,
 				octstr_get_cstr(x), NULL, 
@@ -2265,7 +2265,7 @@ Status_t handle_pres_unsubscribe(RequestInfo_t *ri, UnsubscribePresence_Request_
 	  Octstr *x = gwlist_get(xl, i);
 	  UnsubscribePresence_Request_t sp = dict_get(d, x);
 	  
-	  queue_foreign_msg_add(c, sp, Imps_UnsubscribePresence_Request, 
+	  queue_foreign_msg_add(c, sp, 
 				st,
 				uid, clientid ? octstr_get_cstr(clientid) :  NULL,
 				NULL, 
@@ -2675,7 +2675,7 @@ GetPresence_Response_t handle_get_presence(RequestInfo_t *ri, GetPresence_Reques
 	  }
 #endif
 
-	  queue_foreign_msg_add(c, sp, Imps_GetPresence_Request, st, 
+	  queue_foreign_msg_add(c, sp,  st, 
 				uid, clientid ? octstr_get_cstr(clientid) :  NULL,
 				NULL, 
 				octstr_get_cstr(x), NULL,

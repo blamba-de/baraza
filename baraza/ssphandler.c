@@ -576,7 +576,7 @@ static List *do_trans(PGconn *c, xmlNodePtr transchild, int mode, char *trans, c
 	       if (!dont_send)
 		    xres = queue_msg(c, xsender, -1, xuserid,
 				     xclientid ? octstr_get_cstr(xclientid) : NULL,
-				     rto, msg, mtype, rto_ptr, 0, 0, NULL, 
+				     rto, msg, rto_ptr, 0, 0, NULL, 
 				     time(NULL) + DEFAULT_EXPIRY, 1, csp_ver, &el);
 	       break;
 	  default: /* the rest we use csp processor. */

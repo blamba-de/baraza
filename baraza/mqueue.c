@@ -23,7 +23,7 @@
 
 Octstr *format_sender(Sender_t sender);
 extern struct imps_conf_t *config;
-int64_t queue_foreign_msg_add(PGconn *c, void *msg, int type, Sender_t sender, 
+int64_t queue_foreign_msg_add(PGconn *c, void *msg, Sender_t sender, 
 			      int64_t sender_uid, 
 			      char *clientid,
 			      Octstr *msgid, 
@@ -31,9 +31,10 @@ int64_t queue_foreign_msg_add(PGconn *c, void *msg, int type, Sender_t sender,
 			      int csp_ver,
 			      time_t expiryt)
 {
-     Octstr *out = csp_msg_to_str(msg, type);
-     const char *name = csp_obj_name(type);
-     Octstr *sstr = make_sender_str(sender);
+     int type;
+     Octstr *out;
+     char *name;
+     Octstr *sstr  = make_sender_str(sender);
      
      time_t tnow = time(NULL);
      char *xdata, tmp1[128], tmp2[128], tmp3[128+4], tmp4[128+2], tmp5[64];
@@ -42,7 +43,17 @@ int64_t queue_foreign_msg_add(PGconn *c, void *msg, int type, Sender_t sender,
      int64_t mid;
      PGresult *r;
      
+     
+     gw_assert(msg);
+     
+
+
+     type = CSP_MSG_TYPE(msg);
+     name = (void *)csp_obj_name(type);
+
+     out = csp_msg_to_str(msg, type);
      gw_assert(out);
+
      
 
      /* fix expiry time */
@@ -129,7 +140,7 @@ int64_t queue_foreign_msg_add(PGconn *c, void *msg, int type, Sender_t sender,
      return mid;     
 }
 
-int64_t queue_local_msg_add(PGconn *c, void *msg, int type, Sender_t sender, 
+int64_t queue_local_msg_add(PGconn *c, void *msg, Sender_t sender, 
 			    struct QLocalUser_t localids[],
 			    int num, 
 			    int dlr,
@@ -137,8 +148,8 @@ int64_t queue_local_msg_add(PGconn *c, void *msg, int type, Sender_t sender,
 			    char *rcpt_struct_path,
 			    time_t expiryt)
 {
-     Octstr *out = csp_msg_to_str(msg, type);
-     const char *name = csp_obj_name(type);
+     Octstr *out;
+     char *name;
      Octstr *sstr = make_sender_str(sender);
      time_t tnow = time(NULL);
      char *xdata, tmp1[128+4], tmp3[128+4];
@@ -147,7 +158,15 @@ int64_t queue_local_msg_add(PGconn *c, void *msg, int type, Sender_t sender,
      Octstr *cmd;
      int64_t mid;
      PGresult *r;
-     
+     int type;
+
+
+     gw_assert(msg);
+
+     type = CSP_MSG_TYPE(msg);
+     name  = (void *)csp_obj_name(type);
+
+     out  = csp_msg_to_str(msg, type);
      gw_assert(out);
 
      /* fix expiry time */
@@ -659,7 +678,7 @@ int remove_disallowed_local_recipients(PGconn *c, Sender_t sender,
 
 Octstr *queue_msg(PGconn *c, Sender_t sender, int64_t sender_uid, Octstr *foreign_sender, 
 		  char *clientid, Recipient_t to, 
-		  void *msg, int type, Recipient_t *rcpt_ptr,
+		  void *msg, Recipient_t *rcpt_ptr,
 		  int is_group_invite, int dlr, 
 		  char *rcpt_struct_path, time_t expiryt, int is_ssp,
 		  int csp_ver,
@@ -674,7 +693,11 @@ Octstr *queue_msg(PGconn *c, Sender_t sender, int64_t sender_uid, Octstr *foreig
      Octstr *x;
      Octstr *msgid = make_msg_id(c);
      Sender_t real_sender = NULL;
-     
+     int type;
+
+     gw_assert(msg);
+     type = CSP_MSG_TYPE(msg);
+
      FILL_QSENDER(qs, is_ssp, sender_uid, foreign_sender, octstr_imm(""));
      d = queue_split_rcpt(c, qs, to, is_group_invite, &localids, &lcount, errlist,
 			  &real_sender, is_ssp);
@@ -691,7 +714,7 @@ Octstr *queue_msg(PGconn *c, Sender_t sender, int64_t sender_uid, Octstr *foreig
 	       if (rcpt_ptr) *rcpt_ptr = r;
 	       
 	       /* ignore error for now?? */
-	       queue_foreign_msg_add(c, msg, type, real_sender, sender_uid, clientid, msgid, 
+	       queue_foreign_msg_add(c, msg, real_sender, sender_uid, clientid, msgid, 
 				     octstr_get_cstr(x), NULL, csp_ver, expiryt);
 	       octstr_destroy(x);
 	  }
@@ -707,7 +730,7 @@ Octstr *queue_msg(PGconn *c, Sender_t sender, int64_t sender_uid, Octstr *foreig
      /* send to local ones: Don't bother with rcpt  field. It will be fixed at final delivery. */
 
      if (localids && lcount > 0) 
-	  queue_local_msg_add(c, msg, type, real_sender, localids, lcount, 
+	  queue_local_msg_add(c, msg, real_sender, localids, lcount, 
 			      dlr, msgid, 
 			      rcpt_struct_path,
 			      expiryt);

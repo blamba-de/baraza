@@ -79,14 +79,14 @@ Dict *queue_split_rcpt(PGconn *c, struct QSender_t sender, Recipient_t rcpt, int
 		       int *localid_count, List **errorlist, Sender_t *fixed_sender, int is_ssp);
 
 /* dest_userids is a list of UserID_t or User_t */
-int64_t queue_foreign_msg_add(PGconn *c, void *msg, int type, Sender_t sender, 
+int64_t queue_foreign_msg_add(PGconn *c, void *msg, Sender_t sender, 
 			      int64_t sender_uid, 
 			      char *clientid,
 			      Octstr *msgid, 
 			      char *domain, List *dest_userids, 
 			      int csp_ver,
 			      time_t expiryt);
-int64_t queue_local_msg_add(PGconn *c, void *msg, int type, Sender_t sender, 
+int64_t queue_local_msg_add(PGconn *c, void *msg, Sender_t sender, 
 			    struct QLocalUser_t localids[], 
 			    int num, 
 			    int dlr,
@@ -105,7 +105,7 @@ int remove_disallowed_local_recipients(PGconn *c, Sender_t sender,
 /* utility function to split and send all in one go. */
 Octstr *queue_msg(PGconn *c, Sender_t sender, int64_t sender_uid, Octstr *foreign_sender, 
 		  char *clientid, Recipient_t to, 
-		  void *msg, int type, Recipient_t *rcpt_ptr,
+		  void *msg, Recipient_t *rcpt_ptr,
 		  int is_group_invite, int dlr, 
 		  char *rcpt_struct_path, time_t expiryt, int is_ssp, int csp_ver,
 		  List **errlist);

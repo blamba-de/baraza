@@ -144,7 +144,7 @@ SendMessage_Response_t handle_send_im(RequestInfo_t *ri, SendMessage_Request_t r
 	       info->rcpt = r;
 	       
 	       /* ignore error for now?? */
-	       queue_foreign_msg_add(c, req, Imps_SendMessage_Request, info->sender, 
+	       queue_foreign_msg_add(c, req,  info->sender, 
 				     uid, clientid ? octstr_get_cstr(clientid) : "", msgid, 
 				     octstr_get_cstr(x), NULL, ri->ver, expiryt);
 	       octstr_destroy(x);
@@ -163,7 +163,7 @@ SendMessage_Response_t handle_send_im(RequestInfo_t *ri, SendMessage_Request_t r
 					FV(data, csp_msg_copy(req->data)));
 
 	  rcount += lcount;
-	  queue_local_msg_add(c, nm, Imps_NewMessage, info->sender, localids, lcount, 
+	  queue_local_msg_add(c, nm,  info->sender, localids, lcount, 
 			      req->dreport, msgid, 
 			      "minfo,rcpt",
 			      expiryt);
@@ -442,8 +442,7 @@ static int send_dlr_for_msg(PGconn *c, int64_t msgid, int64_t orig_to, int code,
 
 	  /* now send it. */
 	  el = gwlist_create();
-	  y = queue_msg(c, new_sender, xuid, NULL, clid, r, dlr, 
-			Imps_DeliveryReport_Request, 
+	  y = queue_msg(c, new_sender, xuid, NULL, clid, r, dlr, 			 
 			&dlr->minfo->rcpt, 0, 0, NULL, time(NULL) + DEFAULT_EXPIRY, 
 			0, CSP_VERSION(1,2), &el); /* don't send Rcpt struct path: we don't need it in this context. */
 	  octstr_destroy(y);

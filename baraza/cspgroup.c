@@ -95,7 +95,7 @@ static List *get_properties(PGconn *c, const char *table, const char *fkey,
               } while (0)
 
 static void msg_to_joined_users(PGconn *c, int64_t gid, GroupID_t grp, void *msg, 
-			 int msg_type, char *criteria)
+			 char *criteria)
 {
      char cmd[512];
      PGresult *r;
@@ -142,13 +142,13 @@ static void msg_to_joined_users(PGconn *c, int64_t gid, GroupID_t grp, void *msg
 	  Octstr *xkey = gwlist_get(l, i); 
 	  List *ul = dict_get(d, xkey);
 	  
-	  queue_foreign_msg_add(c, msg, msg_type,sender , -1, NULL, NULL,
+	  queue_foreign_msg_add(c, msg, sender , -1, NULL, NULL,
 				octstr_get_cstr(xkey), ul, CSP_VERSION(1,2), expiryt);
 	  gwlist_destroy(ul, _csp_msg_free);
      }	
 
      if (nelems > 0)
-	  queue_local_msg_add(c, msg, msg_type, sender, lu, nelems, 0, NULL, "", expiryt);
+	  queue_local_msg_add(c, msg,  sender, lu, nelems, 0, NULL, "", expiryt);
 
      dict_destroy(d);
      gw_free(lu);
@@ -170,7 +170,7 @@ static void notify_change(PGconn *c, int64_t gid, GroupID_t grp,
 	  tmp1[0] = 0;
      sprintf(crit, "subscribe_notify = true %s", tmp1);
      
-     msg_to_joined_users(c, gid, grp, gn, Imps_GroupChangeNotice, crit);
+     msg_to_joined_users(c, gid, grp, gn, crit);
 }
 
 static WelcomeNote_t get_welcome_note(PGconn *c, int64_t gid, int bin)
@@ -495,7 +495,7 @@ static void delete_group(PGconn *c, int64_t gid, GroupID_t grp)
 		      FV(res, rs),
 		      FV(gid, csp_msg_copy(grp)));
      
-     msg_to_joined_users(c, gid, grp, lg, Imps_LeaveGroup_Response, NULL);
+     msg_to_joined_users(c, gid, grp, lg, NULL);
      
      /* now delete it. */
      sprintf(cmd, "DELETE from groups WHERE id = %lld", gid);
@@ -589,7 +589,7 @@ static int leave_group(PGconn *c, int64_t uid, char *fuser, Octstr *clientid, in
 		    
 		    extract_id_and_domain(fuser, xid, xdomain);
 		    
-		    queue_foreign_msg_add(c, lg, Imps_LeaveGroup_Response, sender, -1, NULL, NULL,
+		    queue_foreign_msg_add(c, lg, sender, -1, NULL, NULL,
 					  xdomain, l, CSP_VERSION(1,2), time(NULL) + DEFAULT_EXPIRY);
 		    gwlist_destroy(l, _csp_msg_free);
 	       } else { /* local user. */
@@ -600,7 +600,7 @@ static int leave_group(PGconn *c, int64_t uid, char *fuser, Octstr *clientid, in
 		    strncpy(lu.sname, octstr_get_cstr(xg), sizeof lu.sname);
 		    strncpy(lu.clientid, cid, sizeof lu.clientid);
 
-		    queue_local_msg_add(c, lg, Imps_LeaveGroup_Response, sender, 
+		    queue_local_msg_add(c, lg,  sender, 
 					&lu, 1, 0, NULL, "", time(NULL) + DEFAULT_EXPIRY);
 		    
 		    octstr_destroy(xg);
@@ -767,7 +767,7 @@ Status_t handle_create_group(RequestInfo_t *ri, CreateGroup_Request_t req)
 
 
 static Result_t get_grp_info(RequestInfo_t *ri, char *grpname, 
-			     void *msg, int msgtype,
+			     void *msg, 
 			     char xdomain[], char xgid[], int64_t *gid, int64_t *cgid)
 {
      char tmp1[DEFAULT_BUF_LEN], tmp2[DEFAULT_BUF_LEN];
@@ -790,7 +790,7 @@ static Result_t get_grp_info(RequestInfo_t *ri, char *grpname,
 	  if (!ri->is_ssp) {
 	       Sender_t sender = make_sender_struct2(ri->userid, ri->clientid, NULL, NULL);
 	       
-	       queue_foreign_msg_add(ri->c, msg, msgtype, sender, ri->uid, 
+	       queue_foreign_msg_add(ri->c, msg,  sender, ri->uid, 
 				     ri->clientid ? octstr_get_cstr(ri->clientid) : NULL, 
 				     NULL, 
 				     xdomain, NULL, ri->ver, time(NULL) + DEFAULT_EXPIRY);
@@ -836,7 +836,7 @@ Status_t handle_delete_group(RequestInfo_t *ri, DeleteGroup_Request_t req)
      char val[DEFAULT_BUF_LEN], *fld;
 
      if ((rs = get_grp_info(ri, req->gid ? req->gid->str : (void *)"", req, 
-			    Imps_DeleteGroup_Request, xdomain, xgid, &gid, &cgid)) != NULL)
+			     xdomain, xgid, &gid, &cgid)) != NULL)
 	  goto done;
 
      if (ri->is_ssp) {
@@ -893,7 +893,7 @@ LeaveGroup_Response_t handle_leave_group(RequestInfo_t *ri, LeaveGroup_Request_t
      
 
      if ((rs = get_grp_info(ri, req->gid ? req->gid->str : (void *)"", req, 
-			    Imps_LeaveGroup_Request, xdomain, xgid, &gid, &cgid)) == NULL)  {
+			    xdomain, xgid, &gid, &cgid)) == NULL)  {
 	  int res = leave_group(ri->c, ri->is_ssp ? -1 : ri->uid,
 				ri->is_ssp ? octstr_get_cstr(ri->userid) : NULL, 
 				ri->clientid, gid, req->gid, ri->ver, 200, 0);
@@ -925,7 +925,7 @@ GetGroupMembers_Response_t handle_get_group_members(RequestInfo_t *ri, GetGroupM
      char *fld, val[DEFAULT_BUF_LEN];
 
      if ((rs = get_grp_info(ri, req->gid ? req->gid->str : (void *)"", req, 
-			    Imps_GetGroupMembers_Request, xdomain, xgid, &gid, &cgid)) != NULL)
+			     xdomain, xgid, &gid, &cgid)) != NULL)
 	  goto done;
 
      if (ri->is_ssp) {
@@ -1083,7 +1083,7 @@ GetJoinedUsers_Response_t handle_get_joined_users(RequestInfo_t *ri, GetJoinedUs
      char *fld, val[DEFAULT_BUF_LEN];
 
      if ((rs = get_grp_info(ri, req->gid ? req->gid->str : (void *)"", req, 
-			    Imps_GetJoinedUsers_Request, xdomain, xgid, &gid, &cgid)) != NULL)
+			    xdomain, xgid, &gid, &cgid)) != NULL)
 	  goto done;
 
      if (ri->is_ssp) {
@@ -1177,7 +1177,7 @@ JoinGroup_Response_t handle_join_group(RequestInfo_t *ri, JoinGroup_Request_t re
      ScreenName_t sname = NULL;
      
      if ((rs = get_grp_info(ri, req->gid ? req->gid->str : (void *)"", req, 
-			    Imps_JoinGroup_Request, xdomain, xid, &gid, &cgid)) != NULL)
+			     xdomain, xid, &gid, &cgid)) != NULL)
 	  goto done;
      
      rs = join_group(ri, gid, cgid, req->sname, req->oprop, 
@@ -1243,7 +1243,7 @@ Status_t handle_add_members(RequestInfo_t *ri, AddGroupMembers_Request_t req)
      char *fld, val[DEFAULT_BUF_LEN];
 
      if ((rs = get_grp_info(ri, req->gid ? req->gid->str : (void *)"", req, 
-			    Imps_AddGroupMembers_Request, xdomain, xgid, &gid, &cgid)) != NULL)
+			     xdomain, xgid, &gid, &cgid)) != NULL)
 	  goto done;
 
      if (ri->is_ssp) {
@@ -1362,7 +1362,7 @@ Status_t handle_del_members(RequestInfo_t *ri, RemoveGroupMembers_Request_t req)
      char *fld, val[DEFAULT_BUF_LEN];
 
      if ((rs = get_grp_info(ri, req->gid ? req->gid->str : (void *)"", req, 
-			    Imps_RemoveGroupMembers_Request, xdomain, xgid, &gid, &cgid)) != NULL)
+			     xdomain, xgid, &gid, &cgid)) != NULL)
 	  goto done;
      
      if (ri->is_ssp) {
@@ -1549,7 +1549,7 @@ Status_t handle_member_access(RequestInfo_t *ri, MemberAccess_Request_t req)
 
 
      if ((rs = get_grp_info(ri, req->gid ? req->gid->str : (void *)"", req, 
-			    Imps_MemberAccess_Request, xdomain, xgid, &gid, &cgid)) != NULL)
+			     xdomain, xgid, &gid, &cgid)) != NULL)
 	  goto done;
      
      if (ri->is_ssp) {
@@ -1633,7 +1633,7 @@ GetGroupProps_Response_t handle_get_props(RequestInfo_t *ri, GetGroupProps_Reque
      char *fld, val[DEFAULT_BUF_LEN];
 
      if ((rs = get_grp_info(ri, req->gid ? req->gid->str : (void *)"", req, 
-			    Imps_GetGroupProps_Request, xdomain, xgid, &gid, &cgid)) != NULL)
+			    xdomain, xgid, &gid, &cgid)) != NULL)
 	  goto done;
      
      if (ri->is_ssp) {
@@ -1701,7 +1701,7 @@ Status_t handle_set_props(RequestInfo_t *ri, SetGroupProps_Request_t req)
      char *fld, val[DEFAULT_BUF_LEN];
      
      if ((rs = get_grp_info(ri, req->gid ? req->gid->str : (void *)"", req, 
-			    Imps_SetGroupProps_Request, xdomain, xgid, &gid, &cgid)) != NULL)
+			    xdomain, xgid, &gid, &cgid)) != NULL)
 	  goto done;
 
      if (ri->is_ssp) {
@@ -1849,7 +1849,7 @@ RejectList_Response_t handle_reject(RequestInfo_t *ri, RejectList_Request_t req)
      char *fld, val[DEFAULT_BUF_LEN];
      
      if ((rs = get_grp_info(ri, req->gid ? req->gid->str : (void *)"", req, 
-			    Imps_RejectList_Request, xdomain, xgid, &gid, &cgid)) != NULL)
+			     xdomain, xgid, &gid, &cgid)) != NULL)
 	  goto done;
      
      if (ri->is_ssp) {
@@ -1955,7 +1955,7 @@ SubscribeGroupNotice_Response_t handle_subscribe_notice(RequestInfo_t *ri, Subsc
      char *fld, val[DEFAULT_BUF_LEN];
 
      if ((rs = get_grp_info(ri, req->gid ? req->gid->str : (void *)"", req, 
-			    Imps_SubscribeGroupNotice_Request, xdomain, xgid, &gid, &cgid)) != NULL)
+			     xdomain, xgid, &gid, &cgid)) != NULL)
 	  goto done;
      
      if (ri->is_ssp) {

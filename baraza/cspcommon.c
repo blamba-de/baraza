@@ -1952,7 +1952,7 @@ Status_t handle_invite_request(RequestInfo_t *ri, Invite_Request_t req)
 	       req->rcpt = r;
 	       
 	       /* ignore error for now?? */
-	       queue_foreign_msg_add(c, req, Imps_Invite_Request, sender,
+	       queue_foreign_msg_add(c, req, sender,
 				     uid, clientid ? octstr_get_cstr(clientid) : "",
 				     msgid,
 				     octstr_get_cstr(x), NULL, ri->ver, expiryt);
@@ -1964,7 +1964,7 @@ Status_t handle_invite_request(RequestInfo_t *ri, Invite_Request_t req)
      /* send to local ones: Don't bother with rcpt  field. It will be fixed at final delivery. */
      lcount = remove_disallowed_local_recipients(c, sender, uid, localids, lcount, el);
      if (localids && lcount > 0) 
-	  queue_local_msg_add(c, iv, Imps_InviteUser_Request, sender, localids, lcount, 
+	  queue_local_msg_add(c, iv, sender, localids, lcount, 
 			      0, msgid, "rcpt",
 			      expiryt);
      
@@ -2077,7 +2077,7 @@ Status_t handle_invite_user_response(RequestInfo_t *ri, InviteUser_Response_t re
 		    ir->rcpt = r;
 		    
 		    /* ignore error for now?? */
-		    queue_foreign_msg_add(c, ir, Imps_Invite_Response, sender, 
+		    queue_foreign_msg_add(c, ir, sender, 
 					  uid, clientid ? octstr_get_cstr(clientid) : "",
 					  msgid,
 					  octstr_get_cstr(x), NULL, ri->ver, expiryt);
@@ -2089,7 +2089,7 @@ Status_t handle_invite_user_response(RequestInfo_t *ri, InviteUser_Response_t re
 	  /* send to local ones: Don't bother with rcpt  field. It will be fixed at final delivery. */
 	  lcount = remove_disallowed_local_recipients(c, req->sender, uid, localids, lcount, el);
 	  if (localids && lcount > 0) 
-	       queue_local_msg_add(c, ir, Imps_Invite_Response, sender, localids, lcount, 
+	       queue_local_msg_add(c, ir,  sender, localids, lcount, 
 				   0, msgid, "rcpt",  expiryt);
      }
 
@@ -2194,7 +2194,7 @@ Status_t handle_cancel_invite_request(RequestInfo_t *ri, CancelInvite_Request_t 
 	       req->rcpt = r;
 	       
 	       /* ignore error for now?? */
-	       queue_foreign_msg_add(c, req, Imps_CancelInvite_Request, sender, 
+	       queue_foreign_msg_add(c, req, sender, 
 				     uid, clientid ? octstr_get_cstr(clientid) : "",
 				     msgid, 
 				     octstr_get_cstr(x), NULL, ri->ver, expiryt);
@@ -2206,7 +2206,7 @@ Status_t handle_cancel_invite_request(RequestInfo_t *ri, CancelInvite_Request_t 
      /* send to local ones: Don't bother with rcpt  field. It will be fixed at final delivery. */
      if (localids) {
 	  lcount = remove_disallowed_local_recipients(c, sender, uid, localids, lcount, el);
-	  queue_local_msg_add(c, iv, Imps_CancelInviteUser_Request, sender, localids, lcount, 
+	  queue_local_msg_add(c, iv,  sender, localids, lcount, 
 			      0, msgid, "rcpt", 
 			      expiryt);
      }
