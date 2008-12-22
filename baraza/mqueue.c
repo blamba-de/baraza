@@ -129,7 +129,8 @@ int64_t queue_foreign_msg_add(PGconn *c, void *msg, int type, Sender_t sender,
      return mid;     
 }
 
-int64_t queue_local_msg_add(PGconn *c, void *msg, int type, Sender_t sender, struct QLocalUser_t localids[],
+int64_t queue_local_msg_add(PGconn *c, void *msg, int type, Sender_t sender, 
+			    struct QLocalUser_t localids[],
 			    int num, 
 			    int dlr,
 			    Octstr *msgid, 

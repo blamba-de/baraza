@@ -1786,7 +1786,7 @@ static void do_pres_req_notify(PGconn *c, Sender_t sender,
 	  struct QLocalUser_t x = {0};	  
 	  x.uid = watched_uid;
 	  
-	  queue_local_msg_add(c, req, Imps_PresenceAuth_Request, sender, &x, 1,
+	  queue_local_msg_add(c, req, Imps_Notification_Request, sender, &x, 1,
 			      0, NULL, NULL,
 			      time(NULL) + DEFAULT_EXPIRY);	  
 	  csp_msg_free(req);	 	  
