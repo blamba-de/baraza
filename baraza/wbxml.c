@@ -91,8 +91,10 @@ static int parse_value(ParseContext *p, long tok, long page, int csp_version, Oc
 #undef WBVAL
 #undef WBPUBID		    
 		    else {
-			 error(0, "unknown EXT_T code %ld:%ld (page %d, csp_verion=%d), skipped!", 
-			       tok, t, (int)page, csp_version);	    
+			 error(0, "unknown EXT_T code 0x%02X:0x%02X (page %d, csp_verion=%d.%d), skipped!", 
+			       (unsigned)tok, (unsigned)t, (int)page, 
+			       CSP_MAJOR_VERSION(csp_version), 
+			       CSP_MINOR_VERSION(csp_version));	    
 			 tov = -1;
 		    }
      } else if (tok == WBXML_EXT_0 || 

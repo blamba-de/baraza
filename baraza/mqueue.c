@@ -292,7 +292,6 @@ Dict *queue_split_rcpt(PGconn *c, struct QSender_t xsender,
      Group_t g;
      struct QLocalUser_t *ulist; /* convenience. */
 
-     gw_assert(to);
      gw_assert(localids);
      gw_assert(error_list);
      
@@ -308,7 +307,7 @@ Dict *queue_split_rcpt(PGconn *c, struct QSender_t xsender,
 
      /* first we tackle users (easy ones !) */
 
-     for (i = 0, n = gwlist_len(to->ulist); i<n; i++)
+     for (i = 0, n = to  ? gwlist_len(to->ulist) : 0; i<n; i++)
 	  if ((u = gwlist_get(to->ulist, i)) != NULL) {
 	       int64_t uid;
 	       char *user = u->user ? u->user->str : (void *)"";
@@ -350,7 +349,7 @@ Dict *queue_split_rcpt(PGconn *c, struct QSender_t xsender,
 
      /* Next tackle contact lists. */
 
-     for (i = 0, n = gwlist_len(to->clist); i<n; i++)
+     for (i = 0, n = to ? gwlist_len(to->clist) : 0; i<n; i++)
 	  if ((cl = gwlist_get(to->clist, i)) != NULL) {
 	       
 	       extract_id_and_domain((void *)cl->str, xid, xdomain);
@@ -444,7 +443,7 @@ Dict *queue_split_rcpt(PGconn *c, struct QSender_t xsender,
 	  }
 
      /* now handle groups. */
-     for (i = 0, n = gwlist_len(to->glist); i<n; i++)
+     for (i = 0, n = to ? gwlist_len(to->glist) : 0; i<n; i++)
 	  if ((g = gwlist_get(to->glist, i)) != NULL) {
 	       char *scrname = NULL;
 	       ScreenName_t sname = NULL;
