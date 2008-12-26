@@ -165,7 +165,7 @@ void cir_newmsg(CIRTarget_t *x)
 	       conn_write(cinfo, octstr_imm("\r\n"));
 	  } else {
 	       /* Try WAPUDP and WAPSMS in the order requested. */
-	       static int ct; /* trans counter. */
+	       static unsigned char ct; /* trans counter. */
 	       Octstr *wap_msg = octstr_create("");
 	       Octstr *wap_msg_hdr = octstr_create("");
 	       int i;
