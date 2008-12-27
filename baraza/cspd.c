@@ -25,6 +25,7 @@
 #include "json.h"
 #include "baraza.h"
 
+#define DEBUG 1
 
 static void request_handler(List *req_list);
 
