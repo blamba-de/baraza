@@ -31,8 +31,7 @@
 
 enum {Request_MODE, Response_MODE};
 
-/* XXX will be in conf -- soon! */
-char myhostname[DEFAULT_BUF_LEN] = "mirza.ds.co.ug", mydomain[DEFAULT_BUF_LEN] = "ds.co.ug"; 
+char myhostname[DEFAULT_BUF_LEN] = "localhost.localdomain", mydomain[DEFAULT_BUF_LEN] = "localdomain"; 
 
 static Octstr *certfile;
 
@@ -410,7 +409,6 @@ static int ssp_get_session(PGconn *c, char *domain, Octstr *our_domain, Octstr *
      if ((recs = dns_find_srv(domain, "_imps-server._tcp", &scount)) == NULL || scount == 0) {
 	  if (recs)
 	       gw_free(recs);	  
-	  info(0, "S2S Imps: Domain [%s] does not do ssp", domain);
 	  return SSP_ERROR_FATAL;
      }
      

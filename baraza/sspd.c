@@ -134,11 +134,13 @@ static void s2s_queue_runner(List *outgoing)
 		    break;
 	       }
 
-	  if (!cmd[0])  /* No handlers, or all returned transient: just retry again until expiry. */
+	  if (!cmd[0]) {  /* No handlers, or all returned transient: just retry again until expiry. */
 	       sprintf(cmd, "UPDATE ssp_message_queue SET num_tries = num_tries + 1, "
 		       " nextt = current_timestamp + '%ld secs'::interval, lastt = current_timestamp "
 		       " WHERE id = %lld", 
 		       (num_tries + 1)*SENDER_BACKOFF, xtid);
+	       info(0, "S2S: Delivery to domain [%s] failed. Will retry", domain ? octstr_get_cstr(domain) : "n/a");
+	  }
 	  PQclear(r);
 	  r = PQexec(c, cmd); /* update and go away. */
 	  

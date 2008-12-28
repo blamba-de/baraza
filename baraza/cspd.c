@@ -304,6 +304,7 @@ static void request_handler(List *req_list)
 	       test_harness_log_response_packet(thandle, rbody);
 
 	       http_header_add(rh, "Content-Type", octstr_get_cstr(ctype));
+	       http_header_add(rh, "Connection", "keep-alive");
 	       octstr_dump(rbody, 0);
 	       http_send_reply(r->c, status, rh, rbody);
 	       http_destroy_headers(rh);
