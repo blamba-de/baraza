@@ -196,7 +196,10 @@ static Octstr *parse_str(Octstr *in, long *pos, int quote_char)
      }
 
      if (ch == quote_char) /* remove string quote */
-	  ++*pos;     
+	  ++*pos;  
+     /* URL decode */
+     if (out)
+	  octstr_url_decode(out);
      return out;
 }
 

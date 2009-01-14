@@ -1,3 +1,5 @@
+2009-01-14 P. A. Bagyenda <bagyenda@dsmagic.com>
+	* Fix for URL decoding in JSON parser
 2008-12-24 P. A. Bagyenda <bagyenda@dsmagic.com>
 	* Minor fix: wbxml parsing of group invites
 2008-12-22 P. A. Bagyenda <bagyenda@dsmagic.com>
