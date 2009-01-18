@@ -1808,7 +1808,7 @@ static void append_presence_list(Octstr *res, List *pslist, List *rcptlist)
 		    if ((psl = gwlist_get(p->pslist, j)) != NULL) { /* go through each presence sublist. */
 			 OnlineStatus_t os;
 			 int k, l;
-			 char *status_txt, *show;
+			 char *status_txt = NULL, *show = NULL;
 			 int i, n;
 			 SSPRecipient_t *sr;
 			 int online = 0, hidden = 0;
