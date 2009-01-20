@@ -1,6 +1,7 @@
 2009-01-20 P. A. Bagyenda <bagyenda@dsmagic.com>
 	* xmpp handler: presence composition fix
 	* JSON output format for date fixed
+	* ISO date format parser fix
 2009-01-14 P. A. Bagyenda <bagyenda@dsmagic.com>
 	* Fix for URL decoding in JSON parser
 2008-12-24 P. A. Bagyenda <bagyenda@dsmagic.com>
