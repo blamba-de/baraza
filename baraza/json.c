@@ -384,9 +384,11 @@ static Octstr *generate_json_value(void *msg, int objtype, int lev)
 	       os = octstr_format("%ld", (long)msg);			\
 	  else if (Imps_##type == Imps_Boolean)				\
 	       os = octstr_create((msg) ? "true" : "false");		\
-	  else if (Imps_##type == Imps_Date)				\
+	  else if (Imps_##type == Imps_Date) {				\
 	       os = date_create_iso((time_t)msg);			\
-	  else if (Imps_##type == Imps_EmptyTag)			\
+	       octstr_append_char(os, '"');				\
+	       octstr_insert_char(os, 0, '"');				\
+	  } else if (Imps_##type == Imps_EmptyTag)			\
 	       os = octstr_create("1");					\
 	  else /* unknown value */					\
 	       os = octstr_create("null");				\
