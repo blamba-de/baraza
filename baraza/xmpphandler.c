@@ -1824,7 +1824,8 @@ static void append_presence_list(Octstr *res, List *pslist, List *rcptlist)
 			  *
 			  * First we pick up the data for the <show> and <status> elements. 
 			  */
-			 if (psl->avail && 
+			 if (csp_msg_field_isset(psl, avail) && 
+			     psl->avail && 
 			     psl->avail->qual && psl->avail->pvalue) {
 			      char *x = csp_String_to_cstr(psl->avail->pvalue);
 			      
@@ -1840,7 +1841,8 @@ static void append_presence_list(Octstr *res, List *pslist, List *rcptlist)
 			 } else 
 			      show = NULL;
 			 
-			 if (psl->status_txt && psl->status_txt->qual && 
+			 if (csp_msg_field_isset(psl, status_txt) && 
+			     psl->status_txt && psl->status_txt->qual && 
 			     psl->status_txt->pvalue) 
 			      status_txt = csp_String_to_cstr(psl->status_txt->pvalue);		
 			 else 
@@ -1849,11 +1851,12 @@ static void append_presence_list(Octstr *res, List *pslist, List *rcptlist)
 			 /* Next, pass through each of the availabilities, pick up avail 
 			  * status, and report it 
 			  */
-			 for (k = 0, l = gwlist_len(psl->ostatus); k<l; k++)
-			      if ((os = gwlist_get(psl->ostatus, k)) != NULL && 
-				  os->qual && os->pvalue && 
-				  strcasecmp(csp_String_to_cstr(os->pvalue), "T") == 0)
-				   online = 1;
+			 if (csp_msg_field_isset(psl, ostatus))
+			      for (k = 0, l = gwlist_len(psl->ostatus); k<l; k++)
+				   if ((os = gwlist_get(psl->ostatus, k)) != NULL && 
+				       os->qual && os->pvalue && 
+				       strcasecmp(csp_String_to_cstr(os->pvalue), "T") == 0)
+					online = 1;
 			 
 			 /* build for each of the recipients. */
 			 for (i = 0, n = gwlist_len(rcptlist); i<n; i++) 
