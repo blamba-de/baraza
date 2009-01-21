@@ -30,9 +30,6 @@
 
 typedef struct JValue_t *JValue_t;
 
-/* NOTE: Strings must be URL-encoded, e.g. using javascript escape() function.
- * lib will also encode them as such
- */
 static JValue_t parse_json_value(Octstr *val);
 static void free_json_value(JValue_t);
 
@@ -198,8 +195,10 @@ static Octstr *parse_str(Octstr *in, long *pos, int quote_char)
      if (ch == quote_char) /* remove string quote */
 	  ++*pos;  
      /* URL decode */
+#if 0
      if (out)
 	  octstr_url_decode(out);
+#endif
      return out;
 }
 
@@ -376,7 +375,7 @@ static Octstr *generate_json_value(void *msg, int objtype, int lev)
 	       if (msg) {						\
 		    os = csp_String_to_bstr((String_t)msg);		\
 		    escape_str(os);					\
-		    octstr_url_encode(os);				\
+		    /* octstr_url_encode(os);*/				\
 		    octstr_append_char(os, '"');			\
 		    octstr_insert_char(os, 0, '"');			\
 	       }							\
@@ -458,7 +457,7 @@ static Octstr *generate_json_value(void *msg, int objtype, int lev)
 	       octstr_append_char(os,'\n');				\
 	       if (xmsg->_fieldset == 0 && octstr_len(xmsg->_content) > 0) { \
 		    _x = octstr_duplicate(xmsg->_content);		\
-		    octstr_url_encode(_x);				\
+		    /* octstr_url_encode(_x);*/				\
 		    octstr_format_append(os, " \"_content\": \"%S\"\n", _x); \
 		    octstr_destroy(_x);					\
 	       }							\

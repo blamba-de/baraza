@@ -1,3 +1,5 @@
+2009-01-21 P. A. Bagyenda <bagyenda@dsmagic.com>
+	* JSON strings not url-encoded
 2009-01-20 P. A. Bagyenda <bagyenda@dsmagic.com>
 	* xmpp handler: presence composition fix
 	* JSON output format for date fixed

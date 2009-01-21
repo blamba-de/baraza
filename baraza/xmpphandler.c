@@ -1846,7 +1846,7 @@ static void append_presence_list(Octstr *res, List *pslist, List *rcptlist)
 			     psl->status_txt->pvalue) 
 			      status_txt = csp_String_to_cstr(psl->status_txt->pvalue);		
 			 else 
-			      status_txt = "On mobile with www.baraza.im";
+			      status_txt = "On mobile with Baraza (www.baraza.im)";
 			 
 			 /* Next, pass through each of the availabilities, pick up avail 
 			  * status, and report it 
