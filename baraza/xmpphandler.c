@@ -2025,6 +2025,20 @@ static Octstr *csp2xmpp_msg(PGconn *c, void *msg, void *orig_msg, char *from, ch
 				   octstr_destroy(to);
 			      }
 		    octstr_destroy(xgrp);
+	       } else if (strcasecmp(x, "PR") == 0) { /* presence invite */
+		    Recipient_t r = inv->rcpt;
+		    User_t u;
+		    res = octstr_create("");
+		    if (r)
+			 for (i = 0, n = gwlist_len(r->ulist); i<n; i++)
+			      if ((u = gwlist_get(r->ulist, i)) != NULL) {
+				   Octstr *to = make_foreign_jid(u);			 			   
+				   octstr_format_append(res, 
+							"<presence  xmlns='jabber:server'  "
+							"to='%S' from='%s' type='subscribe'/>", 
+							to, bare_from);				   
+				   octstr_destroy(to);
+			      }
 	       } else 
 		    warning(0, "csp2xmpp: unsupported invite type: %s", (char *)x);
 	  }
