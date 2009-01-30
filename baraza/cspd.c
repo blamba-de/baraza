@@ -131,7 +131,7 @@ static void request_handler(List *req_list)
 	       xmlns = req->attributes ? dict_get(req->attributes, octstr_imm("xmlns")) : NULL;
 	       cspver = csp_version(octstr_get_cstr(xmlns));	       
 	  } else 
-	       cspver = CSP_VERSION(1,3); /* JSON. */
+	       cspver = CSP_VERSION(1,2); /* JSON. */
 
 	  /* this below is used for debugging purposes. */
 

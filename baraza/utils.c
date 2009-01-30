@@ -610,7 +610,8 @@ static int get_session_id_real(PGconn *c, char *fld, char *val, RequestInfo_t *r
      x = PQgetvalue(r, 0, 9);
      
      sscanf(x, "%d.%d", &major, &minor);
-     req->ver = CSP_VERSION(major, minor);
+     if (req->ver <= 0)
+	  req->ver = CSP_VERSION(major, minor);
      req->ttl = strtoul(PQgetvalue(r, 0, 10), NULL, 10); 
      req->cir = ((x = PQgetvalue(r, 0, 11)) != NULL && tolower(x[0]) == 't');
 
