@@ -387,8 +387,8 @@ WBXMLGen_t *wbxml_pack_state(u_int8_t wbxml_version, Octstr *publicid, long char
 #define WBPUBID(x,y) else if (octstr_str_case_compare(publicid,y) == 0) state->publicid = x;
 #define WBTAG(a,b,c)
 #define WBATTR(a,b,c) 
-     if (0)
-	  (void)0;
+     if (publicid == NULL)
+	  state->publicid = 0x11; /* defaults to CSP 1.2 PUB ID */
 #include "wbxml.def"
      else 
 	  state->publicid = 1; /* unknown ID. */

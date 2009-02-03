@@ -1,3 +1,5 @@
+2009-02-03 P. A. Bagyenda <bagyenda@dsmagic.com>
+	* Fix for missing publicid in wbxml encoder
 2009-01-30 P. A. Bagyenda <bagyenda@dsmagic.com>
 	* fix for default csp version
 2009-01-27 P. A. Bagyenda <bagyenda@dsmagic.com>
