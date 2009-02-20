@@ -105,7 +105,7 @@ static time_t str_to_Date(Octstr *s, enum IMPsObjectType typ, int bin, int vtype
      } else {
 	  struct universaltime ut;
 	  
-	  if (parse_iso_date(&ut, s) < 0)
+	  if (date_parse_iso(&ut, s) < 0)
 	       return 0;
 	  else 
 	       return date_convert_universal(&ut);

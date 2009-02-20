@@ -302,8 +302,6 @@ int url_fetch_content(int method, Octstr *url, List *request_headers,
 
 int get_content_type(List *hdrs, Octstr **type, Octstr **params);
 
-/* (more) correct ISO date parsing */
-int parse_iso_date(struct universaltime *ut, Octstr *val);
 
 #define DEBUG_LOG_MSG(str, ip, url, descr) do {Octstr *_x = octstr_duplicate(str); \
                                    octstr_binary_to_hex(_x,1); \

@@ -1506,17 +1506,19 @@ static List *xmpp2csp_msg(PGconn *c, iks *node, char domain[], Sender_t *xsender
 		    UserID_t u = ((User_t)xfrom)->user;
 		    /*		    int prio = prio_node ? atoi(iks_cdata(prio_node)) : 0; */
 		    char *xuser = csp_String_to_cstr(u);
-		    OnlineStatus_t os = csp_msg_new(OnlineStatus, NULL,
-						    FV(qual, 1),
-						    FV(pvalue, csp_String_from_cstr("T", 
-										    Imps_PresenceValue)));
-		    ClientInfo_t cinfo = csp_msg_new(ClientInfo, NULL,
-						     FV(qual, 1),
-						     FV(ctype, csp_String_from_cstr("COMPUTER", Imps_ClientType)));
+
 		    char *status = show_node ? iks_cdata(show_node) : NULL;
 		    char *xstatus = type ? "NOT_AVAILABLE" :  /* we are logging off. */
 			 ((status == NULL || strcmp(status, "chat") == 0) ? "AVAILABLE" : "DISCREET");
 		    char *xtxt = status_node ? iks_cdata(status_node) : (status ? status : ""); /* XX do better conversion.*/
+		    int is_online = (type) ? 0 : 1;
+		    OnlineStatus_t os = csp_msg_new(OnlineStatus, NULL,
+						    FV(qual, 1),
+						    FV(pvalue, csp_String_from_cstr(is_online ? "T" : "F", 
+										    Imps_PresenceValue)));
+		    ClientInfo_t cinfo = csp_msg_new(ClientInfo, NULL,
+						     FV(qual, 1),
+						     FV(ctype, csp_String_from_cstr("COMPUTER", Imps_ClientType)));
 		    
 		    UserAvailability_t ua = csp_msg_new(UserAvailability, NULL,
 							FV(qual, 1), 

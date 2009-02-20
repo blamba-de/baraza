@@ -522,7 +522,7 @@ static int csp_msg_from_jvalue(JValue_t val, int msgtype, void **res)
 	       *res = (void *)val->u.bval;				\
 	  else if (Imps_##typ == Imps_Date) {				\
 	       struct universaltime ut;					\
-	       if (parse_iso_date(&ut, val->u.sval) < 0)		\
+	       if (date_parse_iso(&ut, val->u.sval) < 0)		\
 		    return -1;						\
 	       else							\
 		    *res = (void *)date_convert_universal(&ut);		\
