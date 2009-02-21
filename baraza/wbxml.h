@@ -16,7 +16,7 @@
 typedef struct Node_t {
      Dict   *attr;        /* attributes, if any. */
      Octstr *content;     /* node content... */
-     enum {WBXML_UNKNOWN_VALUE=-1, WBXML_OPAQUE_VALUE, WBXML_STRING_VALUE} value_type;
+     enum {WBXML_UNKNOWN_VALUE = -1, WBXML_OPAQUE_VALUE, WBXML_STRING_VALUE} value_type;
      struct Node_t *children; /* ... or children. */
 
      struct Node_t *next;   /* next node in the list. */ 

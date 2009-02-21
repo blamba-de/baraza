@@ -1037,7 +1037,7 @@ void *csp_msg_new_real(int type, Octstr *xmlns, ...)
 			 continue;					\
 		    }							\
 		    parms						\
-		    if (_fct > 0) {va_arg(ap, void *); panic(0, "structure [%s] has no field '%s'!", #xname, fname);} /* should not be reached. */ \
+		    if (_fct > 0) {panic(0, "structure [%s] has no field '%s'!", #xname, fname);} /* should not be reached. */ \
            } \
           xres = obj; /* so compiler shuts up. */ \
          } while (0); \
