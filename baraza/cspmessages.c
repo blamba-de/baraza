@@ -1068,11 +1068,11 @@ int csp_version(char *xmlns)
      int major = 1, minor = 0;
      
      if (xmlns == NULL)
-       return 0x10;
+	  return DEFAULT_CSP_VERSION; /* Default is 1.2 */
      else if ((p = strstr(xmlns, endmarker)) != NULL)
 	  p += strlen(endmarker);
      else 
-	  return 0x10; /* assume version 1.0 */
+	  return  DEFAULT_CSP_VERSION; 
      
      sscanf(p, "%d.%d", &major, &minor);
      return CSP_VERSION(major, minor);

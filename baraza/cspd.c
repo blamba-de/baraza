@@ -60,7 +60,7 @@ static void request_handler(List *req_list)
 	  int status = HTTP_OK, bin = -1;
 	  Octstr *tsid; 
 	  Octstr *ctype, *xmlns;
-	  int n, cspver, json = 0;
+	  int n, cspver = DEFAULT_CSP_VERSION, json = 0;
 	  
 	  void *thandle = test_harness ? test_harness_new_request(test_logdir, r->ip, r->rh, r->body) : NULL;
 	  
@@ -72,12 +72,16 @@ static void request_handler(List *req_list)
 	       bin = 1;
 	       wbxml = parse_wbxml(r->body); /* assume highest version. */
 	       start = wbxml ? wbxml->body : NULL;
+	       cspver = wbxml ? wbxml->csp_version : CSP_VERSION(1,2);
 	  } else if (octstr_case_search(ctype, octstr_imm("xml"), 0) > 0) { 
+	       xmlNodePtr xnode;
 	       bin = 0;
 	       xml = xmlParseMemory(octstr_get_cstr(r->body), octstr_len(r->body));
 	       start = xml ? find_node(xml->xmlChildrenNode, "WV-CSP-Message", 3) : NULL;
 	       if (xml)
 		    dtd = find_dtd_node(xml->xmlChildrenNode, 3); /* find DTD node. */
+	       xnode = start;
+	       cspver = csp_version(xnode && xnode->ns ? (void *)xnode->ns->href : NULL);
 	  } else if (octstr_case_search(ctype, octstr_imm("json"), 0) > 0) { 
 
 	       debug("cspd.json", 0, "JSON request: %s",octstr_get_cstr(r->body));
@@ -90,6 +94,8 @@ static void request_handler(List *req_list)
 	       }
 	       bin = -1;
 	       json = 1;
+
+	       cspver = CSP_VERSION(1,2); 
 	  }
 
 	  if (bin>=0) { /* only for plain-old CSP protocols. */
@@ -127,12 +133,10 @@ static void request_handler(List *req_list)
 	       } while(0);
 #endif
 	       
-	  /* Get version. */
+	  /* Get xmlns. */
 	       xmlns = req->attributes ? dict_get(req->attributes, octstr_imm("xmlns")) : NULL;
-	       cspver = csp_version(octstr_get_cstr(xmlns));	       
-	  } else 
-	       cspver = CSP_VERSION(1,2); /* JSON. */
-
+	  } 
+	     
 	  /* this below is used for debugging purposes. */
 
 	  if ((tsid = http_header_value(r->rh, octstr_imm("X-Baraza-Session-ID"))) != NULL ) 
