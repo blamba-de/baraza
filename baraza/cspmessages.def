@@ -965,7 +965,7 @@ Structure(AcceptedContentType,1,IMPS_1_1,NONE,
  Item(cpolicy_lim,ContentPolicyLimit)
 )
 
-Structure(CIRHTTPAddress,1,IMPS_1_1,NONE,
+Structure(CIRHTTPAddress,1,IMPS_1_3,NONE,
   Item(url,URL)
 )
 

@@ -140,6 +140,8 @@ Node_t parse_wbxml_element(ParseContext *p, long lookahead, WBXML_t wbxml)
 	  long offset = parse_get_uintvar(p);
 	  tag = str_from_table(wbxml->strtbl, offset);
      } else  {
+
+#if 1
 #define WBTAG(nmtag,pg,code) else if (wbxml->tag_page == pg && (stag&TAG_MASK) == code) tag = octstr_imm(#nmtag);
 #define  WBATTR(wh,t,a)
 #define  WBVAL(wh,t,a,x,min,max)
@@ -153,6 +155,26 @@ Node_t parse_wbxml_element(ParseContext *p, long lookahead, WBXML_t wbxml)
 #undef WBPUBID
 	  else 
 	       tag = NULL;
+
+#else
+	  /* XXX might be faster, but doesn't work because some elements have same value of tag+code ! */
+	  unsigned long v = (wbxml->tag_page << 8) | (stag&TAG_MASK);
+	  
+	  switch(v) {
+#define WBTAG(nmtag,pg,code) case ((pg)<<8) | (code):  tag = octstr_imm(#nmtag); break;
+#define  WBATTR(wh,t,a)
+#define  WBVAL(wh,t,a,x,min,max)
+#define WBPUBID(x,y)
+#include "wbxml.def"
+#undef WBTAG
+#undef WBATTR
+#undef WBVAL
+#undef WBPUBID
+	  default: tag = NULL; break;
+	  }
+
+
+#endif
      }
 
      if (tag == NULL) {

@@ -1660,7 +1660,7 @@ static List *xmpp2csp_msg(PGconn *c, iks *node, char domain[], Sender_t *xsender
 
 static void append_stanzas_for_rcpt(Octstr *res, const char *tag, char *attribs, char *id,
 				    char *attrib_for_grp,
-				    char *from, Recipient_t r, Octstr *body)
+				    char *from, Recipient_t r, Octstr *body, int add_ns)
 {
      int i, n;
      User_t u;
@@ -1670,10 +1670,11 @@ static void append_stanzas_for_rcpt(Octstr *res, const char *tag, char *attribs,
      for (i = 0, n = gwlist_len(r->ulist); i<n; i++)
 	  if ((u = gwlist_get(r->ulist, i)) != NULL) {
 	       Octstr *to = make_foreign_jid(u);			 
-	       octstr_format_append(res, "<%s  xmlns='jabber:server'  to='%S' from='%s' %s id='%s'>"
+	       octstr_format_append(res, "<%s  %s  to='%S' from='%s' %s id='%s'>"
 				    "%S"
 				    "</%s>",
 				    tag,
+				    add_ns ? "xmlns='jabber:server'" : "",
 				    to ? to : octstr_imm(""),
 				    from ? from : "",
 				    attribs ? attribs : "",
@@ -1686,10 +1687,11 @@ static void append_stanzas_for_rcpt(Octstr *res, const char *tag, char *attribs,
      for (i = 0, n = gwlist_len(r->glist); i<n; i++)
 	  if ((g = gwlist_get(r->glist, i)) != NULL) {
 	       Octstr *to = make_foreign_jid(g);	
-	       octstr_format_append(res, "<%s  xmlns='jabber:server'   to='%S' from='%s' %s id='%S'>"
+	       octstr_format_append(res, "<%s %s to='%S' from='%s' %s id='%S'>"
 				    "%S"
 				    "</%s>",
 				    tag,
+				    add_ns ? "xmlns='jabber:server'" : "",
 				    to ? to : octstr_imm(""),
 				    from ? from : "",
 				    attrib_for_grp && (g->u.typ == Imps_GroupID) ?
@@ -1962,7 +1964,7 @@ static Octstr *csp2xmpp_msg(PGconn *c, void *msg, void *orig_msg, char *from, ch
 		    
 		    /* queue to send to groups and users. */		    
 		    append_stanzas_for_rcpt(res, "message", "type='chat'", msgid, "type='groupchat'", 
-					    from, r, x);
+					    from, r, x,0);
 		    octstr_destroy(x);
 	       }
 	       octstr_destroy(body);
@@ -2156,7 +2158,7 @@ static Octstr *csp2xmpp_msg(PGconn *c, void *msg, void *orig_msg, char *from, ch
 	       
 	       res = octstr_create("");	       
 	       append_stanzas_for_rcpt(res, "message", NULL, msgid, NULL, from, minfo->rcpt, 
-				       octstr_imm("<received xmlns='urn:xmpp:receipts'/>"));	       
+				       octstr_imm("<received xmlns='urn:xmpp:receipts'/>"),0);	       
 	  } else 
 	       error(0, "csp2xmpp: Hmmm DeliveryReport Request with an error??");
 	  break;
