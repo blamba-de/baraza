@@ -1301,12 +1301,16 @@ static void *handle_capabilitylist(PGconn *c, CapabilityList_t cl,
 	  octstr_destroy(salt);
      } 
      
-     if (has_stcp && 
-	 cir_url == NULL && cirhttp == NULL) { /* only then do we use TCP */
+     if (has_stcp
+#if 0
+ && 
+	 cir_url == NULL && cirhttp == NULL /* only then do we use TCP */
+#endif
+	 )
 	  cirstcp = csp_msg_new(_TCPAddr, NULL,
 				FV(addr, csp_String_from_cstr(ri->conf->cir_ip, Imps_TCPAddress)),
 				FV(port, ri->conf->cir_stcp_port));
-     }
+     
           
      /* now make the response. */
      if (ri->ver <= CSP_VERSION(1,1)) {
