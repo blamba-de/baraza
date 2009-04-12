@@ -2343,7 +2343,7 @@ static void xmpp2csp_trans(PGconn *c, iks *node, XMPPConn_t *xconn)
 			 xres = queue_msg(c, sender, -1, xuserid,
 					  xclientid ? octstr_get_cstr(xclientid) : NULL,
 					  rto, msg,  rto_ptr, 0, 0, NULL, 
-					  time(NULL) + DEFAULT_EXPIRY, 1, CSP_VERSION(1,3), &el);
+					  time(NULL) + SHORT_EXPIRY, 1, CSP_VERSION(1,3), &el);
 		    res = NULL;
 		    break;
 	       default:

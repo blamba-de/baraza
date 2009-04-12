@@ -1207,7 +1207,7 @@ static int send_user_presence(PGconn *c, int64_t source_uid, unsigned long attri
 		    strncpy(lu.clientid, clid, sizeof lu.clientid);
 	       queue_local_msg_add(c, pn,  NULL, &lu, 1, 
 				   0, NULL, NULL,
-				   time(NULL) + DEFAULT_EXPIRY);
+				   time(NULL) + SHORT_EXPIRY);
 	  } else {
 	       List *l = gwlist_create_ex(csp_String_from_cstr(fu, Imps_UserID));
 	       
@@ -1216,7 +1216,7 @@ static int send_user_presence(PGconn *c, int64_t source_uid, unsigned long attri
 				     source_uid, NULL, NULL, 
 				     xdomain, l, 
 				     CSP_VERSION(1,2),
-				     time(NULL) + DEFAULT_EXPIRY);
+				     time(NULL) + SHORT_EXPIRY);
 	       gwlist_destroy(l, (void *)_csp_msg_free);
 	  }
 	  
@@ -2680,7 +2680,7 @@ GetPresence_Response_t handle_get_presence(RequestInfo_t *ri, GetPresence_Reques
 				NULL, 
 				octstr_get_cstr(x), NULL,
 				ri->ver, 
-				time(NULL) + DEFAULT_EXPIRY);
+				time(NULL) + SHORT_EXPIRY);
      }
      
      

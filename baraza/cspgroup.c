@@ -134,7 +134,7 @@ static void msg_to_joined_users(PGconn *c, int64_t gid, GroupID_t grp, void *msg
 		     UFV(u, Imps_GroupID, x));
      sender = csp_msg_new(Sender, NULL,
 			  UFV(u, Imps_Group, x));
-     expiryt = time(NULL) + DEFAULT_EXPIRY;
+     expiryt = time(NULL) + SHORT_EXPIRY;
 
      l = dict_keys(d);
      
@@ -590,7 +590,7 @@ static int leave_group(PGconn *c, int64_t uid, char *fuser, Octstr *clientid, in
 		    extract_id_and_domain(fuser, xid, xdomain);
 		    
 		    queue_foreign_msg_add(c, lg, sender, -1, NULL, NULL,
-					  xdomain, l, CSP_VERSION(1,2), time(NULL) + DEFAULT_EXPIRY);
+					  xdomain, l, CSP_VERSION(1,2), time(NULL) + SHORT_EXPIRY);
 		    gwlist_destroy(l, _csp_msg_free);
 	       } else { /* local user. */
 		    struct QLocalUser_t lu;
@@ -601,7 +601,7 @@ static int leave_group(PGconn *c, int64_t uid, char *fuser, Octstr *clientid, in
 		    strncpy(lu.clientid, cid, sizeof lu.clientid);
 
 		    queue_local_msg_add(c, lg,  sender, 
-					&lu, 1, 0, NULL, "", time(NULL) + DEFAULT_EXPIRY);
+					&lu, 1, 0, NULL, "", time(NULL) + SHORT_EXPIRY);
 		    
 		    octstr_destroy(xg);
 	       }
@@ -793,7 +793,7 @@ static Result_t get_grp_info(RequestInfo_t *ri, char *grpname,
 	       queue_foreign_msg_add(ri->c, msg,  sender, ri->uid, 
 				     ri->clientid ? octstr_get_cstr(ri->clientid) : NULL, 
 				     NULL, 
-				     xdomain, NULL, ri->ver, time(NULL) + DEFAULT_EXPIRY);
+				     xdomain, NULL, ri->ver, time(NULL) + SHORT_EXPIRY);
 	       rs = csp_msg_new(Result, NULL,
 				FV(code,101),
 				FV(descr, 
