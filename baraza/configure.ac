@@ -10,7 +10,7 @@ dnl This program is free software, distributed under the terms of
 dnl the GNU General Public License, with a few exceptions granted (see LICENSE)
 dnl
 
-AC_PREREQ(2.59)
+AC_PREREQ(2.61)
 
 AC_INIT([baraza],[1.0],[admin@baraza.im])
 
@@ -37,7 +37,7 @@ AC_CANONICAL_HOST
 
 dnl Checks for programs.
 AC_PROG_CC
-AC_PROG_LIBTOOL
+#AC_PROG_LIBTOOL
 
 
 dnl Checks for libraries.
@@ -261,7 +261,7 @@ found=""
                         AC_MSG_RESULT($loc)
                         AC_CHECK_FILE("$loc/include/kannel/gw-config.h",
                                 [CFLAGS="$CFLAGS -I$loc/include/kannel"; 
-				LDFLAGS="$LDFLAGS -L$loc/lib/kannel -lwap -lgwlib";
+				LIBS="$LIBS -L$loc/lib/kannel -lwap -lgwlib";
 				found=1
                                 ])
                 fi
@@ -277,7 +277,7 @@ else
         AC_MSG_RESULT([$gw_version])
         AC_MSG_CHECKING([Kannel libs])
         if ! $GW_CONFIG --libs &>/dev/null ; then
-                LDFLAGS="$LDFLAGS `$GW_CONFIG --libs`"
+                LIBS="$LIBS `$GW_CONFIG --libs`"
                 gw_libdir=`$GW_CONFIG --libs`
                 AC_MSG_RESULT([$gw_libdir])
         fi
