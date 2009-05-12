@@ -74,7 +74,9 @@ struct imps_conf_t {
 extern char test_pfile[128], test_logdir[128];
 extern int test_harness;
 int decode_switches(int argc, char *argv[], struct imps_conf_t **config);
+#if 0
 struct imps_conf_t *readconfig(char *conffile);
+#endif
 int parse_conf(FILE * f, struct imps_conf_t *config);
 
 /* test harness stuff. */

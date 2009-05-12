@@ -1,5 +1,6 @@
 2009-05-12 P. A. Bagyenda <bagyenda@dsmagic.com>
 	* Improvements to configure.ac
+	* Added default number of threads
 2009-04-12 P. A. Bagyenda <bagyenda@dsmagic.com>
 	* Lower expiry interval for presence messages
 2009-03-25 P. A. Bagyenda <bagyenda@dsmagic.com>

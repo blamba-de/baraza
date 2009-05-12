@@ -32,8 +32,9 @@
 #define DEFAULT_CONFIG_FILE "/etc/imps.conf"
 #define MAX_TTL 10*60 /* Maximum time-to-live. */
 #define MIN_TTL 10
-
+#define MIN_THREADS 5
 static int conf_init(struct imps_conf_t * config);
+#if 0
 struct imps_conf_t * readconfig(char *conffile)
 {
     FILE *f;
@@ -71,7 +72,7 @@ struct imps_conf_t * readconfig(char *conffile)
     return config;
 }
 
-
+#endif
 static int conf_init(struct imps_conf_t * config)
 {
      time_t t = time(NULL);
@@ -94,6 +95,8 @@ static int conf_init(struct imps_conf_t * config)
 	     sizeof config->mm_txt);
      config->min_ttl = MIN_TTL;
      config->max_ttl = MAX_TTL;
+
+     config->num_threads = MIN_THREADS;
      return 0;
 }
 
@@ -256,8 +259,8 @@ int parse_conf(FILE *f, struct imps_conf_t *config)
 		    config->max_ttl = atoi(value);
 	       else {
 		    config->num_threads = atoi(value);
-		    if (config->num_threads < 1)
-			 config->num_threads = 1;
+		    if (config->num_threads < MIN_THREADS)
+			 config->num_threads = MIN_THREADS;
 	       }
 	       break;
 	  case 'n':
