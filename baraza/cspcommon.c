@@ -1535,7 +1535,7 @@ Search_Response_t handle_search(RequestInfo_t *ri, Search_Request_t req)
 				      G,xuid);
 
 			      DBFIELD(GROUP_USER_ID_OWNER,"creator = %s",G,xuid);
-			      DBFIELD(GROUP_USER_ID_AUTOJOIN,"id IN (SELECT groupid FROM group_members_view WHERE local_userid = %s AND auto_join = 'T')",G,xuid);
+			      DBFIELD(GROUP_USER_ID_AUTOJOIN,"id IN (SELECT group_id FROM group_members_view WHERE local_userid = %s AND auto_join = 'T')",G,xuid);
 			      /* XXXX how will SSP integrate with this cleanly?? */
 			      else 
 				   error(0, "unknown/unsupported search field [%.32s]", elem);

@@ -1,3 +1,5 @@
+2009-05-28 P. A. Bagyenda <bagyenda@dsmagic.com>
+	* Fixed group autojoin search
 2009-05-12 P. A. Bagyenda <bagyenda@dsmagic.com>
 	* Improvements to configure.ac
 	* Added default number of threads

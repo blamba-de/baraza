@@ -167,7 +167,7 @@ int parse_conf(FILE *f, struct imps_conf_t *config)
 	       } else if (strcasecmp(field, "http-proxy-exceptions-regex") == 0) 
 		    proxy_except_regexp = octstr_create(value);
 	       else if (strcasecmp(field, "http-proxy-port") == 0) 
-		  proxy_port = atoi(value);
+		    proxy_port = atoi(value);
 	       else if (strcasecmp(field, "http-port") == 0) 
 		    config->http_port = atoi(value);
 	       else if (strcasecmp(field, "http-interface") == 0)
