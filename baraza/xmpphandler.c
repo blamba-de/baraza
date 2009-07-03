@@ -2361,7 +2361,7 @@ static void xmpp2csp_trans(PGconn *c, iks *node, XMPPConn_t *xconn)
 			 r.userid = xuserid;
 			 r.clientid = xclientid;
 			 
-			 if (req_funcs[mtype] == NULL) {
+			 if (mtype < 0 || mtype > req_funcs_len || req_funcs[mtype] == NULL) {
 			      error(0, 
 				    "unsupported request type [%d:%s] on XMPP S2S interface, rejected", 
 				    mtype, csp_obj_name(mtype));

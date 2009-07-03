@@ -102,6 +102,7 @@ typedef struct RequestInfo_t {
 
 typedef void *(*request_func_t)(RequestInfo_t *req, void *obj);
 extern const request_func_t req_funcs[]; /* functions for requests. */
+extern const unsigned long req_funcs_len; /* Length of array */
 
 #define CSP_SUCCESS(code) ((code)/100 == 2)
 #define CSP_INFO(code) ((code)/100 == 1)

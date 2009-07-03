@@ -2088,3 +2088,4 @@ const request_func_t req_funcs[] = {
 };
 
 
+const unsigned long req_funcs_len = NELEMS(req_funcs);
