@@ -31,7 +31,7 @@
 
 #define DEFAULT_CONFIG_FILE "/etc/imps.conf"
 #define MAX_TTL 10*60 /* Maximum time-to-live. */
-#define MIN_TTL 1
+#define MIN_TTL 2
 #define MIN_THREADS 5
 static int conf_init(struct imps_conf_t * config);
 #if 0
