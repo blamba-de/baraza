@@ -156,7 +156,7 @@ Login_Response_t handle_login(RequestInfo_t *ri, Login_Request_t req)
      AgreedCapabilityList_t caplist = NULL;
      int has_user, auto_regd = 0;
      
-     if (user == NULL) {
+     if (user == NULL || user[0] == 0) {
 	  error(0, "missing userid n login request");
 	  code = 531;
 	  err = "missing user";
