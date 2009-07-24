@@ -173,8 +173,12 @@ int main(int argc, char *argv[])
      info(0, "Starting %s [Version: %s]", SYSTEM_NAME, VERSION);
      while ((client = http_accept_request(config->http_port, &ip, &url, &rh, &body, &cgivars)) != NULL) {
 	  HTTPRequest_t *r = make_http_request_info(rh, url, body, client, ip, cgivars);
-	  info(0, "New request, body len=%ld, uri=%s, header dump follows: ", octstr_len(body), octstr_get_cstr(url));
+
+	  info(1, "New request[%s], body len=%ld, uri=%s, header dump follows: ", 
+	       octstr_get_cstr(r->ua), octstr_len(body), octstr_get_cstr(url));
+#if 0
 	  http_header_dump(rh);
+#endif
 	  if (octstr_len(body) > 0) { /* POST request. */
 	       Octstr *ctype = NULL, *charset = NULL;
 	       
@@ -183,8 +187,8 @@ int main(int argc, char *argv[])
 #if 0
 	       http_header_dump(rh);
 	       octstr_dump(body,0);
-#endif
 	       DEBUG_LOG_MSG(body, ip, url, "recv");
+#endif
 #endif
 
 	       /* route request. */

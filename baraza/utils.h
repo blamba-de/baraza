@@ -273,6 +273,7 @@ typedef struct HTTPRequest_t {
      Octstr *body;
      List *rh;
      List *cgivars;
+     Octstr *ua;
 } HTTPRequest_t;
 
 HTTPRequest_t *make_http_request_info(List *rh, Octstr *uri, 

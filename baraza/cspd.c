@@ -25,7 +25,7 @@
 #include "json.h"
 #include "baraza.h"
 
-#define DEBUG 1
+#define DEBUG 0
 
 static void request_handler(List *req_list);
 
@@ -63,8 +63,9 @@ static void request_handler(List *req_list)
 	  int n, cspver = DEFAULT_CSP_VERSION, json = 0;
 	  
 	  void *thandle = test_harness ? test_harness_new_request(test_logdir, r->ip, r->rh, r->body) : NULL;
-	  
+#if 0
 	  http_header_dump(r->rh);
+#endif
 	  if ((ctype = http_header_value(r->rh, octstr_imm("Content-Type"))) == NULL) {
 	       error(0, "Missing content type in request from: %s", octstr_get_cstr(r->ip));
 	       goto loop;
@@ -108,9 +109,12 @@ static void request_handler(List *req_list)
 		    error(0, "Failed to parse %s message body, content type: %s dump follows: ", 
 			  bin ? "wbxml" : "xml",
 			  octstr_get_cstr(ctype));
+#if 1		    
 		    octstr_dump(r->body,0);
-		    
+
+
 		    http_header_dump(r->rh);
+#endif
 		    goto loop;
 	       }
 	       

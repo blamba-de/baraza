@@ -1238,6 +1238,8 @@ HTTPRequest_t *make_http_request_info(List *rh, Octstr *uri,
      r->rh = rh;
      r->cgivars = cgivars;
      r->uri = uri;
+     r->ua = http_header_value(rh, octstr_imm("User-Agent"));
+     
      return r;
 }
 
@@ -1251,6 +1253,7 @@ void free_http_request_info(HTTPRequest_t *r)
      octstr_destroy(r->body);
      http_destroy_headers(r->rh);
      http_destroy_cgiargs(r->cgivars);
+     octstr_destroy(r->ua);
      gw_free(r);
 }
 
