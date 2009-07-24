@@ -264,12 +264,10 @@ static void xmpp_shutdown(void)
      gwlist_remove_producer(connlist); 
      gwthread_join_every((void *)read_handler); /* wait for them to all quit. */     
 
-     info(0, "socket closed");
      gwlist_remove_producer(outgoing_requests);
      gwthread_join_every((void *)write_handler); /* wait for them to all quit. */     
      gwlist_destroy(outgoing_requests, NULL);
 
-     info(0, "write hander closed closed");     
     
      gwthread_cancel(xmpp_th); /* Kill s2s thread. */
      gwthread_join(xmpp_th);
@@ -283,8 +281,6 @@ static void xmpp_shutdown(void)
      connlist =  outgoing_requests = NULL;
      outgoing = incoming = NULL;     
 
-
-     info(0, "fdset closed closed");    
  
      gnutls_certificate_free_credentials(cred);     
      gnutls_global_deinit();
@@ -940,7 +936,6 @@ static void s2s_iks_handler(int fd, int revents, void *x)
 
      gw_assert(x);
 
-     info(0, "s2s_iks_handler [fd=%d], [revents=%d]", fd, revents);
      fdset_unregister(xmpp_fds, fd); /* no more events on this one (until perhaps after read).*/     
      if (revents & (POLLERR | POLLHUP | POLLNVAL )) { 	  /* hangup. */
 	  if (xconn->flags & XMPP_INCOMING) {
@@ -1015,8 +1010,9 @@ static void read_handler(void)
 	  if (!(flag & XMPP_DEAD)) /* don't re-register a dead connection. */
 	       fdset_register(xmpp_fds, fd, POLLIN, (void *)s2s_iks_handler, xconn); /* put it back. */
      }
-
+#if 0
      info(0, "read thread [%ld] exits", gwthread_self());
+#endif
 }
 
 /* Make a JID out of a Group_t or User_t */

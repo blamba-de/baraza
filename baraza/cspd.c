@@ -364,7 +364,6 @@ static void request_handler(List *req_list)
 	  free_http_request_info(r);
      }
 
-     info(0, "Request thread exists");
 }
 
 
