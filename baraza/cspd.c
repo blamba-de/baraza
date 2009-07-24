@@ -100,10 +100,11 @@ static void request_handler(List *req_list)
 	  }
 
 	  if (bin>=0) { /* only for plain-old CSP protocols. */
+#if 0
 	       info(0, "Request from %s, blen=%ld, ctype=%s", 
 		    octstr_get_cstr(r->ip), octstr_len(r->body),
 		    bin ? "wbxml" : "xml");
-	       
+#endif       
 	       if (start == NULL ||
 		   parse_WV_CSP_Message(start, &end, bin, (void *)&req) != 0) {
 		    error(0, "Failed to parse %s message body, content type: %s dump follows: ", 
@@ -130,7 +131,7 @@ static void request_handler(List *req_list)
 		    octstr_destroy(t);
 		    octstr_destroy(t2);
 		    
-#if 1   
+#if 0
 		    info(0, "Wbxml received was: %s\n", octstr_get_cstr(os)); 
 #endif
 		    octstr_destroy(os);

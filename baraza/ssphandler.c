@@ -445,7 +445,7 @@ static int ssp_send(Octstr *url, Octstr *xml, char *transid, char *sessid)
      if (sessid)
 	  http_header_add(rh, "x-wv-sessionid", sessid);
      status = fetch_url(url, HTTP_METHOD_POST, xml, rh, "application/vnd.wv.ssp+xml", certfile);
-#if 1
+#if 0
      info(0, "SSP sending transaction data [http result: %d]: %s", status, octstr_get_cstr(xml)); 
 #endif
      res  = (http_status_class(status) == HTTP_STATUS_SUCCESSFUL) ? SSP_OK : SSP_ERROR_TRANSIENT;
