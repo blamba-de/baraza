@@ -131,7 +131,7 @@ static void request_handler(List *req_list)
 		    octstr_destroy(t);
 		    octstr_destroy(t2);
 		    
-#if 0
+#if 1
 		    info(0, "Wbxml received was: %s\n", octstr_get_cstr(os)); 
 #endif
 		    octstr_destroy(os);
