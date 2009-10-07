@@ -33,7 +33,7 @@
 #define DEFAULT_MAX_CLEN 100*1024 /* default maximum content object size. */
 #define DEFAULT_MAX_SEARCH_LIMIT 100
 #define DEFAULT_EXPIRY 60*60*24    /* 1 day */
-#define SHORT_EXPIRY   10*60 /* presence info should expire fast. */
+#define SHORT_EXPIRY   2*60 /* presence info should expire fast. */
 #define DEFAULT_POLL_MIN MIN_TTL /* default poll minimum. */
 
 #define DEFAULT_BUF_LEN 256

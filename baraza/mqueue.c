@@ -170,7 +170,7 @@ int64_t queue_local_msg_add(PGconn *c, void *msg, Sender_t sender,
      gw_assert(out);
 
      /* fix expiry time */
-     if (expiryt <= tnow + config->min_ttl)
+     if (expiryt < tnow + config->min_ttl)
 	  expiryt = tnow + DEFAULT_EXPIRY;
 
 
