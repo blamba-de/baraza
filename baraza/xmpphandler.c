@@ -67,14 +67,14 @@ GCRY_THREAD_OPTION_PTHREAD_IMPL;   /* required by gnutls. */
 #define WAIT_INTERVAL      1 /* wait one second. */
 
 #define XMPP_PORT 5269
+
 struct DialBackWaiter_t {
      int fd; /* file descriptor of waiter. */
      char id[DEFAULT_BUF_LEN]; /* ID being verified. */
 };
 
-typedef struct XMPPConn_t {
-     char domain[DEFAULT_BUF_LEN];
-     char _pad1;
+
+typedef struct XMPPConn_t { 
      char our_domain[DEFAULT_BUF_LEN];
      char _pad2;
      char host[DEFAULT_BUF_LEN];
@@ -86,6 +86,9 @@ typedef struct XMPPConn_t {
      Mutex *m;
      List *db_list; /* of DialbackWaiter */
      unsigned short ver; /* xmpp version. */
+     char _pad1;
+     List *domains; /* Incoming domains */
+     char first_domain[DEFAULT_BUF_LEN]; /* to make logging easier */
 } XMPPConn_t;
 
 struct OutgoingReq_t {
@@ -124,7 +127,10 @@ static char *xmpp_oflags(int flags, char buf[]);
 static void s2s_iks_handler(int fd, int revents, void *x);
 
 static void xmpp2csp_trans(PGconn *c, iks *node, XMPPConn_t *);
-static List *xmpp2csp_msg(PGconn *c, iks *node, char domain[], Sender_t *xsender, 
+static List *xmpp2csp_msg(PGconn *c, iks *node,
+			  List *domains, char first_domain[],
+			  Octstr **domain, 
+			  Sender_t *xsender, 
 			  void **rto, Octstr **id,  Octstr **err);
 static Octstr *csp2xmpp_msg(PGconn *c, void *msg, void *orig_msg, char *from, char *orig_id,
 			    List *rcptlist, Octstr *err);
@@ -287,18 +293,35 @@ static void xmpp_shutdown(void)
 
 }
 
+static void update_xmppconn(XMPPConn_t *x, char *our_domain, char *domain)
+{
+     gw_assert(x);
+     gw_assert(x->domains);
+
+     if (x->first_domain[0] == 0)
+	  strncpy(x->first_domain, domain, sizeof x->first_domain);
+     
+     gwlist_append(x->domains, octstr_create(domain));
+     
+     /* XXX we should also multi-plex outgoing, but not now */
+     strncpy(x->our_domain, our_domain, sizeof x->our_domain);     
+}
+
 static void *make_xmppconn(char *domain, char *our_domain, char *host, 
 			  char *id, int flags)
 {
      XMPPConn_t *x = gw_malloc(sizeof x[0]);
 
      memset(x, 0, sizeof x[0]);
-     if (domain)
-	  strncpy(x->domain, domain, sizeof x->domain);
-     else 
-	  x->domain[0] = 0;
 
-     if (our_domain)
+     x->domains = gwlist_create();
+     
+     if (domain) {
+	  gwlist_append(x->domains, octstr_create(domain));
+	  strncpy(x->first_domain, domain, sizeof x->first_domain);
+     }
+
+     if (our_domain) 
 	  strncpy(x->our_domain, our_domain, sizeof x->our_domain);
      else 
 	  x->our_domain[0] = 0;
@@ -337,6 +360,8 @@ static void free_xmppconn(XMPPConn_t *xconn)
 	  gw_free(x);
      gwlist_destroy(xconn->db_list, NULL);
 
+     if (xconn->domains)
+	  gwlist_destroy(xconn->domains, (void *)octstr_destroy);
      gw_free(xconn);
 }
 
@@ -412,6 +437,7 @@ static void s2s_xmpp_listener(void *unused)
 
 }
 
+#define MAKE_CONN_KEY(myd,otherd) octstr_format("%s&%s", (myd),(otherd))
 
 /* Gets a new connection, removes it from the outgoing list. */
 static int get_connection(char *domain, char *our_domain, XMPPConn_t **xconn, int flags)
@@ -426,7 +452,7 @@ static int get_connection(char *domain, char *our_domain, XMPPConn_t **xconn, in
 
      *xconn = NULL;
      /* Look in list of connections, pick out one. If none, make a new one. */
-     xkey = octstr_create(domain);     
+     xkey = MAKE_CONN_KEY(domain, our_domain); /* Require sender/receiver pair to be unique */
      if ((l = dict_get(outgoing, xkey)) != NULL && gwlist_len(l) > 0) {
 	  XMPPConn_t *x;
 	  int n;
@@ -447,14 +473,15 @@ static int get_connection(char *domain, char *our_domain, XMPPConn_t **xconn, in
 				   *xconn = x;
 				   res = SSP_OK;
 				   gwlist_delete(l, i, 1); /* remove it from the list. */
-				   info(0, "S2S XMPP: Selected %s for domain %s", x->host, x->domain);
+				   info(0, "S2S XMPP: Selected %s for domain %s", x->host, x->first_domain);
 				   break;
 				   
 			      }  else if (x && (flg & XMPP_DEAD)) { /* it died: remove it from list.*/
 				   gwlist_delete(l, i, 1);
 				   n--;
 				   i--;
-				   info(0, "Outgoing connection [%s] for %s died: Closing it", x->id, x->domain);
+				   info(0, "Outgoing connection [%s] for %s died: Closing it", x->id, 
+					x->first_domain);
 			      }			      
 			 } mutex_unlock(x->m);
 			 if (flg & XMPP_DEAD) { /* it was seen to have died, so destroy it. */
@@ -506,14 +533,15 @@ static int get_connection(char *domain, char *our_domain, XMPPConn_t **xconn, in
      }
      
      for (i = 0; i<scount; i++) 
-	  if (iks_connect_via(x->prs, recs[i].host, recs[i].port, x->domain) == IKS_OK) {/* try to connect. */
+	  if (iks_connect_via(x->prs, recs[i].host, recs[i].port, 
+			      x->first_domain) == IKS_OK) {/* try to connect. */
 	       List *l = gwlist_create();
 	       
 	       if (dict_put_once(outgoing, xkey, l) == 0)   /* make domain list. */
 		    l = dict_get(outgoing, xkey);
 	       
 	       strncpy(x->host, recs[i].host, sizeof x->host);
-	       info(0, "S2S XMPP: Connecting to %s for domain %s", x->host, x->domain);
+	       info(0, "S2S XMPP: Connecting to %s for domain %s", x->host, x->first_domain);
 	       
 	       
 	       x->port = recs[i].port;
@@ -555,7 +583,7 @@ static void return_connection(XMPPConn_t *xconn)
      mutex_unlock(xconn->m); /* unlock it. */
      gw_assert(xconn->flags & XMPP_OUTGOING);
 
-     key = octstr_create(xconn->domain);
+     key = MAKE_CONN_KEY(xconn->first_domain,xconn->our_domain);
      l = dict_get(outgoing, key);
      
      gw_assert(l);
@@ -602,7 +630,7 @@ static void my_iks_log_hook(void *x, const char *data, size_t len, int incoming)
 	  iks_is_secure(xconn->prs) ? "SECURE" : "PLAIN",
 	  xmpp_conntype(xconn->flags),
 	  xmpp_oflags(xconn->flags, flg),
-	  xconn->host, xconn->port, xconn->domain, xconn->our_domain, xconn->id, 
+	  xconn->host, xconn->port, xconn->first_domain, xconn->our_domain, xconn->id, 
 	  data);
 }
 
@@ -641,9 +669,9 @@ static char *xmpp_oflags(int flags, char buf[])
 
 static void send_db_key(XMPPConn_t *xconn)
 {
-     Octstr *key = mk_db_key(xconn->id, xconn->domain, xconn->our_domain);
+     Octstr *key = mk_db_key(xconn->id, xconn->first_domain, xconn->our_domain);
      Octstr *x = octstr_format("<db:result to='%s' from='%s'>%S</db:result>",
-			       xconn->domain, xconn->our_domain, key);
+			       xconn->first_domain, xconn->our_domain, key);
      iks_send_raw(xconn->prs, octstr_get_cstr(x));			
      xconn->flags |= XMPP_DB_SENT;
      octstr_destroy(x);
@@ -730,7 +758,7 @@ static int s2s_xmpp_processor(void *x, int type, iks *node)
 		    /* send greeting only if not yet secure. 
 		     * otherwise iksemel will have sent greeting.
 		     */
-		    iks_send_header(xconn->prs, xconn->domain[0] ? xconn->domain : NULL);
+		    iks_send_header(xconn->prs, xconn->first_domain[0] ? xconn->first_domain : NULL);
 		    if (version >= CSP_VERSION(1,0))
 			 iks_send_raw(xconn->prs, "<stream:features xmlns:stream='http://etherx.jabber.org/streams'>"
 				      "<starttls xmlns='urn:ietf:params:xml:ns:xmpp-tls'>"
@@ -834,8 +862,12 @@ static int s2s_xmpp_processor(void *x, int type, iks *node)
 
 		    if (strcasecmp(type, "valid") == 0) {
 			 /* record the domain. */
+#if 0
 			 strncpy(o_xconn->domain, domain, sizeof o_xconn->domain);
 			 strncpy(o_xconn->our_domain, our_domain, sizeof o_xconn->our_domain);
+#else
+			 update_xmppconn(o_xconn, our_domain, domain);
+#endif
 			 
 			 o_xconn->flags |=  XMPP_DB_CHECK_OK | (XMPP_CONN_SECURE_OK(o_xconn) ? XMPP_CONNECTED : 0);
 		    } else 
@@ -918,12 +950,12 @@ static int s2s_xmpp_processor(void *x, int type, iks *node)
 	  iks_is_secure(xconn->prs) ? "SECURE" : "PLAIN",
 	  xmpp_conntype(xconn->flags),
 	  xmpp_oflags(xconn->flags, buf),
-	  xconn->host, xconn->port, xconn->domain, xconn->our_domain, xconn->id);
+	  xconn->host, xconn->port, xconn->first_domain, xconn->our_domain, xconn->id);
 
      /* check to see if we need to close an incoming connection. */
      if ((xconn->flags & XMPP_INCOMING) && 
 	 (xconn->flags & XMPP_DEAD)) {
-	  info(0, "Incoming connection for %s died, closing fd", xconn->domain);
+	  info(0, "Incoming connection for %s died, closing fd", xconn->first_domain);
 	  close(iks_fd(xconn->prs)); 
      }
      return 0;     
@@ -998,7 +1030,7 @@ static void read_handler(void)
 	       gwthread_self(), 
 	       (xconn->flags & XMPP_INCOMING) ? "INCOMING" : "OUTGOING",
 	       xmpp_conntype(xconn->flags),
-	       xconn->domain,
+	       xconn->first_domain,
 	       fd);
 #endif
 	  if (mutex_trylock(xconn->m) == 0) { /* if it fails, then read/write is in progress, so go away. */
@@ -1286,7 +1318,17 @@ static int check_if_muc_context(iks *node)
      return 0;
 }
 
-static List *xmpp2csp_msg(PGconn *c, iks *node, char domain[], Sender_t *xsender, void **rto, 
+static int cmp_domains(void *item, void *pattern)
+{
+     int y = octstr_str_case_compare(item, pattern);
+
+     return y == 0;
+}
+
+static List *xmpp2csp_msg(PGconn *c, iks *node,
+			  List *domains,
+			  char first_domain[],
+			  Octstr **domain, Sender_t *xsender, void **rto, 
 			  Octstr **id,  Octstr **err)
 {
      char xsdomain[DEFAULT_BUF_LEN];
@@ -1303,6 +1345,7 @@ static List *xmpp2csp_msg(PGconn *c, iks *node, char domain[], Sender_t *xsender
      void *xfrom;
      Octstr *e = NULL;
      List *lres = gwlist_create();
+
      
      if ((xfrom = parse_foreign_jid(from ? from : "anon@anon", is_group, xsdomain)) != NULL)
 	  sender = csp_msg_new(Sender, NULL,
@@ -1323,11 +1366,11 @@ static List *xmpp2csp_msg(PGconn *c, iks *node, char domain[], Sender_t *xsender
 			       "Domain [%s] not handled here</text></error>", xrdomain);
 	  info(0, "XMPPhandler: Hmmm, received request for domain [%s], but that domain is not local!",
 	       xrdomain);
-     } else if (strcasecmp(xsdomain, domain) != 0)
+     } else if ((*domain = gwlist_search(domains,xsdomain, cmp_domains)) == NULL)
 	  e = octstr_format("<error type='cancel'><forbidden xmlns='urn:ietf:params:xml:ns:xmpp-stanzas'/>"
-			      "<text xmlns='urn:ietf:params:xml:ns:xmpp-stanzas'> "
-			      "Sender domain mismatch: Was expecting [%s], received [%s]</text></error>",
-			    domain, xsdomain);	  
+			    "<text xmlns='urn:ietf:params:xml:ns:xmpp-stanzas'> "
+			    "Sender domain mismatch: Was expecting [%s], received [%s]</text></error>",
+			    first_domain, xsdomain);	  
      else if (strcasecmp(name, "message") == 0) {
 	  iks *enode = iks_find(node, "error");
 	  iks *snode = (x = iks_find(node, "subject")) ? iks_child(x) : NULL;	  	  
@@ -2267,10 +2310,11 @@ static void xmpp2csp_trans(PGconn *c, iks *node, XMPPConn_t *xconn)
      Octstr *id = NULL, *err  = NULL;
      List *mlist;
      void *msg;
-     char *domain = xconn->domain;
-     Octstr *out = octstr_create("");
+     char *domain = xconn->first_domain;
+     Octstr *out = octstr_create(""), *xdomain = NULL;
      
-     mlist = xmpp2csp_msg(c, node, domain, &sender, &to, &id, &err);
+     mlist = xmpp2csp_msg(c, node, xconn->domains, 
+			  domain, &xdomain, &sender, &to, &id, &err);
      if (err)
 	  octstr_append(out, err);
      else if (mlist)
@@ -2422,7 +2466,7 @@ static void xmpp2csp_trans(PGconn *c, iks *node, XMPPConn_t *xconn)
 	  struct OutgoingReq_t *x = gw_malloc(sizeof *x);
 
 	  x->msg = out;
-	  strncpy(x->domain, xconn->domain, sizeof x->domain);
+	  strncpy(x->domain, xdomain ? octstr_get_cstr(xdomain) : xconn->first_domain, sizeof x->domain);
 	  strncpy(x->our_domain, xconn->our_domain, sizeof x->our_domain);
 	  
 	  x->conn_flags = XMPP_CONNECTED;
