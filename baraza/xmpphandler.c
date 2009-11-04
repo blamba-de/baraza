@@ -298,10 +298,11 @@ static void update_xmppconn(XMPPConn_t *x, char *our_domain, char *domain)
      gw_assert(x);
      gw_assert(x->domains);
 
-     if (x->first_domain[0] == 0)
+     if (x->first_domain[0] == 0 && domain)
 	  strncpy(x->first_domain, domain, sizeof x->first_domain);
      
-     gwlist_append(x->domains, octstr_create(domain));
+     if (domain)
+	  gwlist_append(x->domains, octstr_create(domain));
      
      /* XXX we should also multi-plex outgoing, but not now */
      strncpy(x->our_domain, our_domain, sizeof x->our_domain);     
@@ -343,6 +344,7 @@ static void *make_xmppconn(char *domain, char *our_domain, char *host,
 
      return x;
 }
+
 static void free_xmppconn(XMPPConn_t *xconn)
 {
      void *x;
@@ -1320,7 +1322,7 @@ static int check_if_muc_context(iks *node)
 
 static int cmp_domains(void *item, void *pattern)
 {
-     int y = octstr_str_case_compare(item, pattern);
+     int y = octstr_str_case_compare((Octstr *)item, (char *)pattern);
 
      return y == 0;
 }
