@@ -56,17 +56,19 @@ struct JValue_t {
 
 
 static JValue_t parse_json_value_real(Octstr *in, long *pos);
+
+#define VCHAR(c) (isalnum(c) || (c) == '_')
 static int getword(char *str, char buf[], int lim)
 {
      char *p = buf;
      
-     while (isalnum(*str) && 
+     while (VCHAR(*str) && 
 	    p-buf < lim)
 	  *p++ = *str++;
 
      *p = 0; /* null terminate. */
 
-     while (*str && isalnum(*str)) /* skip over rest of it, if we stopped above for len.*/
+     while (*str && VCHAR(*str)) /* skip over rest of it, if we stopped above for len.*/
 	  str++; 
      return p - buf;
 }
