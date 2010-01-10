@@ -1,3 +1,5 @@
+2010-01-10 P. A. Bagyenda <bagyenda@dsmagic.com>
+        * Fix: mem leak in dns lookup code
 2010-01-07 P. A. Bagyenda <bagyenda@dsmagic.com>
 	* Moved table creation stuff out of code
 	* Started moving pg_escape stuff out of code (reduce risk of sql injection attacks)

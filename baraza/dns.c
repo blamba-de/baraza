@@ -93,10 +93,16 @@ SrvRecord_t dns_find_srv(char *domain, char *service, int *count)
      unsigned char pkt[MAX_PACKET];     
      long i, dlen,  n_ans;
      SrvRecord_t resp = NULL;
- 
+     struct __res_state res = {0};
      ns_msg msg;
      
-     if ((dlen = res_querydomain(service, domain, ns_c_in, ns_t_srv, pkt, sizeof pkt)) < 0 ||
+     
+     res.options &= (~RES_INIT);
+     
+     if (res_ninit(&res)  < 0)
+	  return NULL;
+     
+     if ((dlen = res_nquerydomain(&res, service, domain, ns_c_in, ns_t_srv, pkt, sizeof pkt)) < 0 ||
 	 ns_initparse(pkt, dlen, &msg) < 0 ||
 	 (n_ans = ns_msg_count(msg, ns_s_an)) <= 0) {
 	  *count = 0;
@@ -138,6 +144,7 @@ SrvRecord_t dns_find_srv(char *domain, char *service, int *count)
      
  done:
 
+     res_ndestroy(&res);
      return resp;
 }
 
