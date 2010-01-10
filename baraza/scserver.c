@@ -30,26 +30,29 @@ static void handler_th(void *unused)
 	  Octstr *ckey = http_cgi_variable(hr->cgivars, "d");	  
 	  Octstr *keywd = http_cgi_variable(hr->cgivars, "keywd");	  
 	  PGconn *c = pg_cp_get_conn();
-	  char tmp1[DEFAULT_BUF_LEN], tmp2[DEFAULT_BUF_LEN];
-	  char buf[512];
+	  const char *cmd;
+	  const char *pvals[10];
 	  PGresult *r;
-
+	  int nargs;
+	  
 	  info(0, "Request for content ID=%s, key=%s, keyword=%s", 
 	       octstr_get_cstr(id), octstr_get_cstr(ckey), 
 	       octstr_get_cstr(keywd));	  
-	  PQ_ESCAPE_STR(c, id ? octstr_get_cstr(id) : "-1", tmp1);
+	  
 	  if (ckey) {
-	       PQ_ESCAPE_STR(c,  octstr_get_cstr(ckey), tmp2);
-	       sprintf(buf, "SELECT content_type, content,content_encoding FROM shared_content WHERE "
-		       "id = '%.128s' AND content_key = '%.128s'", 
-		       tmp1, tmp2);
+	       pvals[0] = id ? octstr_get_cstr(id) : "-1";
+	       pvals[1]  = octstr_get_cstr(ckey);
+	       nargs = 2;
+	       cmd = "SELECT content_type, content,content_encoding FROM shared_content WHERE "
+		 "id = $1 AND content_key = $2";
 	  } else {
-	       PQ_ESCAPE_STR(c, keywd ? octstr_get_cstr(keywd) : "x", tmp2);
-	       sprintf(buf, "SELECT content_type, content,content_encoding FROM shared_content WHERE "
-		       "content_keyword = '%.128s'", 
-		       tmp2);	  
+	       pvals[0] = keywd ? octstr_get_cstr(keywd) : "x";
+	       nargs = 1;
+	       cmd = "SELECT content_type, content,content_encoding FROM shared_content WHERE "
+		    "content_keyword = $1";	  
 	  }
-	  r = PQexec(c, buf);
+
+	  r = PQexecParams(c, cmd, nargs, NULL, pvals, NULL, NULL, 0);
 	  
 	  if (PQresultStatus(r) != PGRES_TUPLES_OK || PQntuples(r) < 1) 
 	       http_close_client(hr->c);
@@ -99,27 +102,25 @@ void sc_shutdown_server(void)
 
 Octstr *sc_add_content(PGconn *c, char *ctype, char *enc, char *data, long dsize)
 {
-     Octstr *cmd;
-     void *xdata;
-     size_t dlen;
-     char tmp1[DEFAULT_BUF_LEN];
-     char tmp2[DEFAULT_BUF_LEN];
      PGresult *r;
      Octstr *res;
+     const char *pvals[10];
+     int plens[10] = {0}, pfrmt[10] = {0};
      
      gw_assert(data);
      
-     xdata = PQescapeBytea((void *)data, dsize, &dlen);
+     pvals[0] = ctype;
+     pvals[1] = data;
+     plens[1] = dsize;
+     pfrmt[1] = 1;
+     
+     pvals[2] = enc ? enc : "";
 
-     PQ_ESCAPE_STR(c, ctype, tmp1);
-     PQ_ESCAPE_STR(c, enc ? enc : "", tmp2);
-
-     cmd = octstr_format("INSERT INTO shared_content (content_type, content, content_encoding, content_key) "
-			 "VALUES ('%s', E'%s'::bytea, '%.128s', md5(current_timestamp||'mykey')) "
+     r = PQexecParams(c, 
+		      "INSERT INTO shared_content (content_type, content, content_encoding, content_key) "
+		      "VALUES ($1, $2, $3, md5(current_timestamp||'mykey')) "		    
 			 "RETURNING id, content_key", 
-			 tmp1, xdata, tmp2);
-
-     r = PQexec(c, octstr_get_cstr(cmd));
+		      3, NULL, pvals, plens, pfrmt, 0);
      if (PQresultStatus(r) != PGRES_TUPLES_OK || PQntuples(r) < 1) 
 	  res = NULL;
      else {
@@ -135,8 +136,6 @@ Octstr *sc_add_content(PGconn *c, char *ctype, char *enc, char *data, long dsize
      }
      PQclear(r);
 
-     octstr_destroy(cmd);
-     PQfreemem(xdata);
 
      return res;
 }

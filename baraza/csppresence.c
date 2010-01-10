@@ -104,9 +104,10 @@ static List *add_nicks_to_clist(PGconn *c, List *nl, int64_t cid, RequestInfo_t 
      _NickU_t nu;
      List *l = gwlist_create();
      char xid[DEFAULT_BUF_LEN], xdomain[DEFAULT_BUF_LEN];
-     char cmd[512], tmp1[DEFAULT_BUF_LEN], tmp2[DEFAULT_BUF_LEN], tmp3[DEFAULT_BUF_LEN];
+     char cmd[512];
      char cmemb[DEFAULT_BUF_LEN];
      PGresult *r;
+     const char *pvals[10];
      
      for (i = 0, n = gwlist_len(nl); i < n; i++) 
 	  if ((nu = gwlist_get(nl, i)) != NULL) {
@@ -114,6 +115,7 @@ static List *add_nicks_to_clist(PGconn *c, List *nl, int64_t cid, RequestInfo_t 
 	       Name_t nm;
 	       int islocal;
 	       int64_t xuid;
+	       char *cname;
 	       
 	       if (nu->u.typ == Imps_NickName) {
 		    NickName_t x = nu->u.val;
@@ -133,9 +135,7 @@ static List *add_nicks_to_clist(PGconn *c, List *nl, int64_t cid, RequestInfo_t 
 	       }
 		    
 	       extract_id_and_domain((char *)u->str, xid, xdomain);
-	       PQ_ESCAPE_STR_LOWER(c, xid, tmp1);
-	       PQ_ESCAPE_STR_LOWER(c, xdomain, tmp2);
-	       xuid = get_userid(c, tmp1, tmp2, &islocal);
+	       xuid = get_userid(c, xid, xdomain, &islocal);
 	       
 	       if (xuid < 0 && islocal) {
 		    Octstr *_x = octstr_format("Unknown UserID: %s", (char *)u->str);
@@ -147,30 +147,38 @@ static List *add_nicks_to_clist(PGconn *c, List *nl, int64_t cid, RequestInfo_t 
 		    octstr_destroy(_x);
 		    continue;
 	       }
-	       	      
-	       PQ_ESCAPE_STR(c, nm ? (char *)nm->str : "", tmp3);
+	       	
+	       cname = nm ? (char *)nm->str : "";
+
 	       if (xuid >= 0)
 		    sprintf(cmemb, "%lld", xuid);
 	       else 
-		    sprintf(cmemb, "'%.64s%s%.64s'", tmp1, (tmp2[0]) ? "@" : "", tmp2);
+		    sprintf(cmemb, "%.64s%s%.64s", xid, (xdomain[0]) ? "@" : "", xdomain);
 			    
 	       /* first check to see if the contact exists already: in which case an update is done */
-	       sprintf(cmd, "SELECT id FROM contactlist_members WHERE %s = %s AND cid = %lld ",
+	       sprintf(cmd, "SELECT id FROM contactlist_members WHERE %s = $1 AND cid = %lld ",
 		       xuid >= 0 ? "local_userid" : "foreign_userid",
-		       cmemb, cid);
-	       r = PQexec(c, cmd);
+		       cid);
+	       pvals[0] = cmemb;	       
+	       r = PQexecParams(c, cmd, 1, NULL, pvals, NULL, NULL, 0);
+
+	       pvals[0] = cname;
 	       if (PQresultStatus(r) == PGRES_TUPLES_OK && PQntuples(r) > 0) {
-		    int64_t x = strtoull(PQgetvalue(r, 0, 0), NULL, 10);		    
-		    sprintf(cmd, "UPDATE contactlist_members SET cname='%.128s' WHERE id = %lld",
-			    tmp3, x);
-	       } else 
+		    char *z = PQgetvalue(r, 0, 0);
+		    int64_t x = strtoull(z, NULL, 10);		    
+		    pvals[1] = z;
+		    sprintf(cmd,  "UPDATE contactlist_members SET cname=$1 WHERE id = %lld", x);
+	       } else {
+		    pvals[1] = cmemb;
+		    
 		    sprintf(cmd, "INSERT INTO contactlist_members (cid, %s, cname) VALUES "
-			    "(%lld, %s, '%.128s')", 
+			    "(%lld, $2, $1)", 
 			    xuid >= 0 ? "local_userid" : "foreign_userid",
-			    cid, cmemb, tmp3);
+			    cid);
+	       }
 	       PQclear(r);
 	       
-	       r = PQexec(c, cmd);
+	       r = PQexecParams(c, cmd, 2, NULL, pvals, NULL, NULL, 0);
 	       if (PQresultStatus(r) != PGRES_COMMAND_OK) 
 		    warning(0, "failed to add/update contact: %s", PQerrorMessage(c));
 	       PQclear(r);		    		    
@@ -200,12 +208,13 @@ CreateList_Response_t handle_create_list(RequestInfo_t *ri, CreateList_Request_t
      char xuser[DEFAULT_BUF_LEN], xudomain[DEFAULT_BUF_LEN];
      char xid[DEFAULT_BUF_LEN], xdomain[DEFAULT_BUF_LEN], *p, *fname = "", *isdefault = "f";
      Property_t pdefault = NULL;          
-     char cmd[512], tmp1[DEFAULT_BUF_LEN], tmp2[DEFAULT_BUF_LEN], tmp3[DEFAULT_BUF_LEN];
+     char cmd[512];
      char tmp4[DEFAULT_BUF_LEN];
      CreateList_Response_t resp = NULL;     
      List *el = NULL;
      Property_t pp;
-
+     const char *pvals[10];
+     
      int64_t uid = ri->uid, cid;
      PGresult *r;
      int i, n, x;
@@ -245,19 +254,19 @@ CreateList_Response_t handle_create_list(RequestInfo_t *ri, CreateList_Request_t
 			      pdefault = pp;
 			 }
 		    }
-     PQ_ESCAPE_STR_LOWER(c, xid, tmp1);
-     PQ_ESCAPE_STR_LOWER(c, xdomain, tmp2);
-     PQ_ESCAPE_STR(c, fname, tmp3);
      
      /* A list is the default if none is the default, or if it is designated default. */
      sprintf(tmp4, "%s OR (SELECT count(*) = 0 FROM contactlists WHERE userid = %lld)", 
 	     _str2bool(isdefault) ? "true" : "false",
 	     uid);
      
+     pvals[0] = xid;
+     pvals[1] = xdomain;
+     pvals[2] = fname;
      sprintf(cmd, "INSERT INTO contactlists (cid,domain,userid,friendly_name,isdefault) VALUES "
-	     "(lower('%.128s'), lower('%.128s'), %lld, '%.128s', %s) RETURNING id, isdefault", 
-	     tmp1, tmp2, uid, tmp3, tmp4);
-     r = PQexec(c, cmd);
+	     "(lower($1), lower($2), %lld, $3, %s) RETURNING id, isdefault", 
+	     uid, tmp4);
+     r = PQexecParams(c, cmd, 3, NULL, pvals, NULL, NULL, 0);
 
      if (PQresultStatus(r) != PGRES_TUPLES_OK || PQntuples(r) < 1) {
 	  void *rs = csp_msg_new(Result, NULL, 
@@ -324,14 +333,14 @@ Status_t handle_delete_list(RequestInfo_t *ri, DeleteList_Request_t req)
 {
      int64_t cid;
      char xid[DEFAULT_BUF_LEN], xdomain[DEFAULT_BUF_LEN];
-     char cmd[512], tmp1[DEFAULT_BUF_LEN], tmp2[DEFAULT_BUF_LEN];
+     char cmd[512];
      char *p;
      int isdefault;
      int64_t uid = ri->uid;
      PGresult *r;
      Result_t rs;
      int attribs = 0, islocal = 0;
-     
+
      PGconn *c = ri->c;
 
      gw_assert(req);
@@ -344,10 +353,7 @@ Status_t handle_delete_list(RequestInfo_t *ri, DeleteList_Request_t req)
      }
 
      extract_id_and_domain((char *)req->clist->str, xid, xdomain);
-     
-     PQ_ESCAPE_STR_LOWER(c, xid, tmp1);
-     PQ_ESCAPE_STR_LOWER(c, xdomain, tmp2);
-     
+          
      cid = get_contactlist(c, xid, xdomain, NULL, &islocal);
      if (cid < 0) {
 	  rs = csp_msg_new(Result, NULL, 
@@ -435,12 +441,12 @@ ListManage_Response_t handle_manage_list(RequestInfo_t *ri, ListManage_Request_t
 {
      char xid[DEFAULT_BUF_LEN], xdomain[DEFAULT_BUF_LEN];
 
-     char cmd[512], tmp1[DEFAULT_BUF_LEN], tmp2[DEFAULT_BUF_LEN];
+     char cmd[512];
      int attribs = 0;
      ListManage_Response_t resp = NULL;     
      ContactListProperties_t cpresp = NULL;
      List *el = NULL;
-
+     const char *pvals[0];
      NickList_t nl = NULL;
      int64_t cid;
      PGresult *r;
@@ -457,9 +463,6 @@ ListManage_Response_t handle_manage_list(RequestInfo_t *ri, ListManage_Request_t
      
      extract_id_and_domain(csp_String_to_cstr(req->clist), xid, xdomain);
      
-     PQ_ESCAPE_STR_LOWER(c, xid, tmp1);
-     PQ_ESCAPE_STR_LOWER(c, xdomain, tmp2);
-
      /* Get the info about the list */
      
      cid = get_contactlist(c, xid, xdomain, NULL, &islocal);
@@ -490,19 +493,23 @@ ListManage_Response_t handle_manage_list(RequestInfo_t *ri, ListManage_Request_t
 	  for (i = 0, n = gwlist_len(ul); i<n; i++) 
 	       if ((u = gwlist_get(ul, i)) != NULL) {
 		    int64_t xuid;
-		    
+		    int nargs = 0;
 		    extract_id_and_domain((char *)u->str, xid, xdomain);		    
-		    PQ_ESCAPE_STR_LOWER(c, xid, tmp1);
-		    PQ_ESCAPE_STR_LOWER(c, xdomain, tmp2);
-		    xuid = get_userid(c, tmp1, tmp2, &islocal);
+
+		    xuid = get_userid(c, xid, xdomain, &islocal);
 
 		    if (xuid >= 0)
 			 sprintf(cmd, "DELETE from contactlist_members WHERE cid = %lld AND local_userid = %lld",
 				 cid, xuid);
-		    else 
+		    else {
 			 sprintf(cmd, "DELETE FROM contactlist_members WHERE cid = %lld AND "
-				 "foreign_userid = '%.64s%s%.64s'", cid, tmp1, (tmp2[0]) ? "@" : "", tmp2);
-		    r = PQexec(c, cmd);
+				 "foreign_userid = $1 || $2 || $3", cid);
+			 pvals[0] = xid;
+			 pvals[1] = xdomain[0] ? "@" : "";
+			 pvals[2] = xdomain;
+			 nargs = 3;
+		    }
+		    r = PQexecParams(c, cmd, nargs, NULL, pvals, NULL, NULL, 0);
 		    PQclear(r); /* don't care about result. */		    
 
 		    if (attribs) { /* unsubscribe to it. */
@@ -521,6 +528,8 @@ ListManage_Response_t handle_manage_list(RequestInfo_t *ri, ListManage_Request_t
 	  char *fname = NULL, *p;
 	  int  xdefault, i, n;
 	  char cond1[DEFAULT_BUF_LEN], cond2[16], *isdefault = NULL;
+	  const char *pvals[10];
+	  int nargs = 0;
 	  
 	  for (i = 0, n = gwlist_len(cp->plist); i<n; i++) 
 	       if ((pp = gwlist_get(cp->plist, i)) != NULL) 
@@ -531,10 +540,11 @@ ListManage_Response_t handle_manage_list(RequestInfo_t *ri, ListManage_Request_t
 			      isdefault = (char *)pp->value->str;			
 		    }
 	  if (fname) {
-	       PQ_ESCAPE_STR(c, fname, tmp1);
-	       sprintf(cond1, ", friendly_name='%.102s' ", tmp1);
+	       pvals[nargs++] = fname;
+	       sprintf(cond1, ", friendly_name=$%d ", nargs);
 	  }  else 
 	       cond1[0] = 0;
+	  
 	  if (isdefault && _str2bool(isdefault)) /* only allowed to change to true. */ 
 	       sprintf(cond2, ", isdefault=true");
 	  else 
@@ -543,8 +553,7 @@ ListManage_Response_t handle_manage_list(RequestInfo_t *ri, ListManage_Request_t
 	  sprintf(cmd, "UPDATE contactlists SET descr=descr %s %s WHERE id = %lld RETURNING isdefault, friendly_name",
 		  cond1, cond2, cid);
 	  
-	  r = PQexec(c, cmd);
-	  
+	  r = PQexecParams(c, cmd, nargs, NULL, pvals, NULL, NULL,0);	  
 	  if (PQresultStatus(r) != PGRES_TUPLES_OK || PQntuples(r) <= 0) {
 	       DetailedResult_t dr = csp_msg_new(DetailedResult, NULL,
 						 FV(code, 500),
@@ -938,37 +947,38 @@ void fixup_pres_for_cspversion(PresenceSubList_t p, int csp_version)
 static void save_pres(PGconn *c, PresenceSubList_t p, int64_t sessid)
 {
      Octstr *out = csp_msg_to_str(p, Imps_PresenceSubList);
-     char *xdata, xuid[128];
-     Octstr *s;
-     size_t dlen;
+     char xuid[128];
+
      PGresult *r;
+     const char *pvals[5];
+     int plens[5] = {0}, pfrmt[5] = {0};     
      
      gw_assert(out);
 
      sprintf(xuid, "%lld", sessid);
-     xdata = (void *)PQescapeBytea((void *)octstr_get_cstr(out), octstr_len(out), &dlen);    
-     s = octstr_format("UPDATE sessions SET presence = E'%s'::bytea,last_pres_update = current_timestamp WHERE id = %s", xdata, xuid);
-
-     r = PQexec(c, octstr_get_cstr(s));
+     pvals[0] = xuid;
+     pvals[1] = octstr_get_cstr(out);
+     plens[1] = octstr_len(out);
+     pfrmt[1] = 1;
+     
+     r = PQexecParams(c, "UPDATE sessions SET presence = $2,last_pres_update = current_timestamp WHERE id = $1",
+		      2, NULL, pvals, plens, pfrmt, 0);
 
      if (PQresultStatus(r) != PGRES_COMMAND_OK) 
 	  warning(0, "failed to update presence info: %s", PQerrorMessage(c));
      PQclear(r);
-     octstr_destroy(s);
+
      
      /* Find the alias, update the users info. */
      if (p->alias && p->alias->pvalue && p->alias->qual) {
 	  char *alias = (char *)p->alias->pvalue->str;
-	  char cmd[512];
 	  
-	  PQ_ESCAPE_STR(c, alias, xuid);
-	  sprintf(cmd, "UPDATE users SET nickname = '%.128s' WHERE id = (SELECT userid FROM sessions WHERE id = %lld)",
-		  xuid, sessid);
-	  r = PQexec(c, cmd);
+	  pvals[1] = alias;	  
+	  r = PQexecParams(c, "UPDATE users SET nickname = $2 WHERE id = (SELECT userid FROM sessions WHERE id = $1)",
+			   2, NULL, pvals, NULL, NULL, 0);
 	  PQclear(r);
      }
      octstr_destroy(out);
-     PQfreemem(xdata);
 }
 
 /* Get authorised presence attribute mask. */
@@ -981,7 +991,9 @@ static int get_pres_auth(PGconn *c, int64_t watched_uid, int64_t watcher_uid,
      int m = -1;
      char cmd[512];
      PGresult *r;
-
+     const char *pvals[5];
+     int nargs = 0;
+     
      if (is_bot(c, watched_uid, NULL, NULL) ||  /* All attributes allowed for  Bot, or... */
 	 (watcher_uid >= 0 && 
 	  watcher_uid == watched_uid) ) {  /* a user requesting their own presence (nokia!). */
@@ -992,13 +1004,13 @@ static int get_pres_auth(PGconn *c, int64_t watched_uid, int64_t watcher_uid,
 	  sprintf(cmd, "SELECT attribs,auth_type,notify from get_local_user_auth(%lld, %lld)", 
 		  watched_uid, watcher_uid);/* Get the authorised attributes. */
      else {
-	  char tmp1[DEFAULT_BUF_LEN];
-	  PQ_ESCAPE_STR_LOWER(c, watcher_foreign_uid, tmp1);
-	  sprintf(cmd, "SELECT attribs,auth_type,notify from get_foreign_user_auth(%lld, '%.256s')", 
-		  watched_uid, tmp1);/* Get the authorised attributes. */
+	  pvals[0] = watcher_foreign_uid;
+	  nargs = 1;
+	  sprintf(cmd, "SELECT attribs,auth_type,notify from get_foreign_user_auth(%lld, $1)", 
+		  watched_uid);/* Get the authorised attributes. */
      }
      
-     r = PQexec(c, cmd);
+     r = PQexecParams(c, cmd, nargs, NULL, pvals, NULL, NULL, 0);
      
      if (PQresultStatus(r) != PGRES_TUPLES_OK) 
 	  warning(0, "failed to query for presence authorisations: %s", PQerrorMessage(c));     
@@ -1242,11 +1254,12 @@ Status_t handle_create_attribs(RequestInfo_t *ri, CreateAttributeList_Request_t 
      ContactList_t ctl;
      unsigned long attribs;
      char xid[DEFAULT_BUF_LEN], xdomain[DEFAULT_BUF_LEN];
-     char cmd[512],  tmp1[DEFAULT_BUF_LEN], tmp2[DEFAULT_BUF_LEN];
+     char cmd[512];
      char field[32], value[DEFAULT_BUF_LEN];
      char tmptbl[DEFAULT_BUF_LEN];
      PGresult *r;
      PGconn *c = ri->c;
+     const char *pvals[10];
      
      gw_assert(req);
 
@@ -1268,12 +1281,11 @@ Status_t handle_create_attribs(RequestInfo_t *ri, CreateAttributeList_Request_t 
 	       int64_t xuid, aid = 0; /* if a local user. */
 	       int islocal;
 	       unsigned long old_attribs;
-	       int new;
+	       int new, nargs = 0, nargs2;
 
 	       extract_id_and_domain((char *)u->str, xid, xdomain);
-	       PQ_ESCAPE_STR_LOWER(c, xid, tmp1);
-	       PQ_ESCAPE_STR_LOWER(c, xdomain, tmp2);
-	       xuid = get_userid(c, tmp1, tmp2, &islocal);
+
+	       xuid = get_userid(c, xid, xdomain, &islocal);
 	       
 	       if (xuid < 0 && islocal) {
 		    Octstr *_x = octstr_format("Unknown UserID: %s", (char *)u->str);
@@ -1291,16 +1303,18 @@ Status_t handle_create_attribs(RequestInfo_t *ri, CreateAttributeList_Request_t 
 		    sprintf(value, "%lld", xuid);		    
 	       } else {
 		    strcpy(field, "foreign_userid");
-		    sprintf(value, "'%.64s%s%.64s'", 	
-			    tmp1, tmp2[0] ? "@" : "",
-			    tmp2);
+		    sprintf(value, "$1 || $2 || $3");
+		    pvals[0] = xid;
+		    pvals[1] = xdomain[0] ? "@" : "";
+		    pvals[2] = xdomain;
+		    nargs = 3;
 	       }
 	       
 	       sprintf(cmd, "SELECT attribs_authorised, id FROM presence_user_authorisations "
 		       "WHERE userid = %lld AND %s = %s", 
 		       uid, field, value);
 	       
-	       r = PQexec(c, cmd);
+	       r = PQexecParams(c, cmd, nargs, NULL, pvals, NULL, NULL, 0);
 	       
 	       if (PQresultStatus(r) != PGRES_TUPLES_OK || 
 		   PQntuples(r) < 1) {
@@ -1315,13 +1329,15 @@ Status_t handle_create_attribs(RequestInfo_t *ri, CreateAttributeList_Request_t 
 
 	       
 	       /* now update or add. */
-	       if (!new)
+	       nargs2 = nargs;
+	       if (!new) {
 		    sprintf(cmd, "UPDATE presence_user_authorisations SET "
 			    " attribs_authorised = %lu %s WHERE id = %lld",
 			    attribs, 
 			    uNotify ? (req->uNotify ? ",user_notify=true" : ",user_notify=false") : "",
 			    aid);
-	       else 
+		    nargs2 = 0;
+	       } else 
 		    sprintf(cmd, "INSERT INTO presence_user_authorisations (userid, %s,attribs_authorised %s) "
 			    " VALUES (%lld, %s, %lu %s)",
 			    field, 
@@ -1329,7 +1345,7 @@ Status_t handle_create_attribs(RequestInfo_t *ri, CreateAttributeList_Request_t 
 			    uid, value, attribs,
 			    uNotify ? (req->uNotify ? ",true" : ",false"): "");
 	       
-	       r = PQexec(c, cmd);
+	       r = PQexecParams(c, cmd, nargs2, NULL, pvals, NULL, NULL, 0);
 	       if (PQresultStatus(r) != PGRES_COMMAND_OK) 
 		    warning(0, "failed to save authorisation: %s", PQerrorMessage(c));
 	       PQclear(r);
@@ -1341,7 +1357,7 @@ Status_t handle_create_attribs(RequestInfo_t *ri, CreateAttributeList_Request_t 
 		    sprintf(cmd, "INSERT INTO %s (id) SELECT id FROM pr_watchlist_userid_view WHERE "
 			    " %s = %s AND userid = %lld",
 			    tmptbl, field, value, uid);
-		    r = PQexec(c, cmd); 
+		    r = PQexecParams(c, cmd, nargs, NULL, pvals, NULL, NULL, 0); 
 		    PQclear(r); /* ignore errors. */
 	       }
 	       
@@ -1352,18 +1368,18 @@ Status_t handle_create_attribs(RequestInfo_t *ri, CreateAttributeList_Request_t 
 	  if ((ctl = gwlist_get(cl, i)) != NULL) {
 	       unsigned long old_attribs;
 	       int64_t cid;
+	       char xuid[64];
 	       
 	       extract_id_and_domain((char *)ctl->str, xid, xdomain);
 	       
-	       PQ_ESCAPE_STR_LOWER(c, xid, tmp1);
-	       PQ_ESCAPE_STR_LOWER(c, xdomain, tmp2);
+	       sprintf(xuid, "%lld", uid);
+	       pvals[0] = xid;
+	       pvals[1] = xdomain;
+	       pvals[2] = xuid;
 	       
-	       sprintf(cmd, "SELECT presence_attribs_authorised, id FROM contactlists WHERE "
-		       " userid=%lld AND cid='%.128s' AND domain='%.128s'",
-		       uid, tmp1, tmp2);
-
-	       r = PQexec(c, cmd);
-	       
+	       r = PQexecParams(c, "SELECT presence_attribs_authorised, id FROM contactlists WHERE "
+				" userid=$3 AND cid=$1 AND domain=$2",
+				3, NULL, pvals, NULL, NULL, 0);	       
 	       if (PQresultStatus(r) != PGRES_TUPLES_OK || PQntuples(r) < 1) {
 		    Octstr *s = octstr_format("No such contact list: %s", (void *)ctl->str);
 		    DetailedResult_t rs = csp_msg_new(DetailedResult, NULL, 
@@ -1429,8 +1445,7 @@ Status_t handle_create_attribs(RequestInfo_t *ri, CreateAttributeList_Request_t 
 
 
 Status_t handle_delete_attribs(RequestInfo_t *ri, DeleteAttributeList_Request_t req )
-{
-     int64_t uid = ri->uid;
+{    
      List *ul, *cl, *dl;
      Result_t res;
      int i, n;
@@ -1439,9 +1454,10 @@ Status_t handle_delete_attribs(RequestInfo_t *ri, DeleteAttributeList_Request_t 
      ContactList_t ctl;
 
      char xid[DEFAULT_BUF_LEN], xdomain[DEFAULT_BUF_LEN];
-     char cmd[512], tmp1[DEFAULT_BUF_LEN], tmp2[DEFAULT_BUF_LEN];
+
      PGresult *r;
      PGconn *c = ri->c;
+     const char *pvals[10];
      
      gw_assert(req);
 
@@ -1454,12 +1470,12 @@ Status_t handle_delete_attribs(RequestInfo_t *ri, DeleteAttributeList_Request_t 
      for (i = 0, n = gwlist_len(ul); i<n; i++)
 	  if ((u = gwlist_get(ul, i)) != NULL) {
 	       int64_t xuid; /* if a local user. */
-	       int islocal;
-	       	      
+	       int islocal, nargs = 0;
+	       char tmp[64];
+	       const char *cmd;
+	       
 	       extract_id_and_domain((char *)u->str, xid, xdomain);
-	       PQ_ESCAPE_STR_LOWER(c, xid, tmp1);
-	       PQ_ESCAPE_STR_LOWER(c, xdomain, tmp2);
-	       xuid = get_userid(c, tmp1, tmp2, &islocal);
+	       xuid = get_userid(c, xid, xdomain, &islocal);
 	       
 	       if (xuid < 0 && islocal) {
 		    Octstr *_x = octstr_format("Unknown UserID: %s", (char *)u->str);
@@ -1472,42 +1488,45 @@ Status_t handle_delete_attribs(RequestInfo_t *ri, DeleteAttributeList_Request_t 
 		    continue;
 	       } 	       /* check if already authorised. */
 	       
-	       if (xuid >= 0)
-		    sprintf(cmd, "DELETE FROM presence_user_authorisations "
-			    "WHERE userid = %lld AND local_userid = %lld", 
-			    uid, xuid);
-	       else
-		    sprintf(cmd, "DELETE FROM presence_user_authorisations "
-			    "WHERE userid = %lld AND foreign_userid = '%.128s%s%.128s'", 
-			    uid, 
-			    tmp1, tmp2[0] ? "@" : "",
-			    tmp2);
-	       r = PQexec(c, cmd);
+	       sprintf(tmp, "%lld", xuid);
+	       
+	       pvals[0] = ri->_uid;
+	       if (xuid >= 0) {
+		    pvals[1] = tmp;
+		    cmd = "DELETE FROM presence_user_authorisations "
+			 "WHERE userid = $1 AND local_userid = $2";
+		    nargs = 2;
+	       } else {
+		    pvals[1] = xid;
+		    pvals[2] = xdomain[0] ? "@" : "";
+		    pvals[3] = xdomain;
+		    
+		    cmd = "DELETE FROM presence_user_authorisations WHERE userid = $1 AND foreign_userid = $2 || $3 || $4";
+		    nargs = 3;
+	       }
+		    
+	       r = PQexecParams(c, cmd, nargs, NULL, pvals, NULL, NULL, 0);
 	       PQclear(r); /* we don't check error. */	      	       
 	  }
-          
+     
+     pvals[0] = ri->_uid;
      for (i = 0, n = gwlist_len(cl); i<n; i++)
 	  if ((ctl = gwlist_get(cl, i)) != NULL) {
 	       
 	       extract_id_and_domain((char *)ctl->str, xid, xdomain);
 	       
-	       PQ_ESCAPE_STR_LOWER(c, xid, tmp1);
-	       PQ_ESCAPE_STR_LOWER(c, xdomain, tmp2);
-	       
-	       sprintf(cmd, "UPDATE contactlists SET presence_attribs_authorised=NULL WHERE "
-		       " userid=%lld AND cid='%.128s' AND domain='%.128s'",
-		       uid, tmp1, tmp2);
-
-	       r = PQexec(c, cmd);
-	       
+	       pvals[1] = xid;
+	       pvals[2] = xdomain;	       
+	       r = PQexecParams(c, "UPDATE contactlists SET presence_attribs_authorised=NULL WHERE "
+				" userid=$1 AND cid=$2 AND domain=$3",
+				3, NULL, pvals, NULL, NULL,0);	       
 	       PQclear(r);
 	  }
      
      if (req->delDflt) { /* default one to be updated as well. */
-	  sprintf(cmd, "UPDATE users SET lastt=current_timestamp, "
-		  " default_notify=false, default_attr_list = NULL  WHERE id = %lld",
-		  uid);
-	  r = PQexec(c, cmd);
+	  r = PQexecParams(c, "UPDATE users SET lastt=current_timestamp, "
+			   " default_notify=false, default_attr_list = NULL  WHERE id = $1", 
+			   1, NULL, pvals, NULL, NULL, 0);
 	  PQclear(r);	  
      }
 
@@ -1540,16 +1559,28 @@ static PresenceSubList_t build_pres_element(unsigned long attribs, int ver)
      return p;
 }
 
-static int add_user_attribs(PGconn *c, int64_t uid, int ver, char *crit, List *pl)
+static int add_user_attribs(PGconn *c, char *uid, int ver, char *target_userid, List *pl)
 {
      int i, n;
      PGresult *r;
-     char cmd[512];
-     sprintf(cmd, "SELECT localuserid,foreign_userid,attribs_authorised,user_notify FROM pr_users_view "
-	     " WHERE userid = %lld AND %s", 
-	     uid, crit ? crit : "TRUE");
+     const char *cmd;
+     const char *pvals[5];
+     int nargs;
+
+     pvals[0] = uid;
+     pvals[1] = target_userid;
      
-     r = PQexec(c, cmd);
+     if (target_userid)  {
+	  cmd = "SELECT localuserid,foreign_userid,attribs_authorised,user_notify FROM pr_users_view "
+	       " WHERE userid = $1 AND ((localuserid=$2 OR foreign_userid = $2)";
+	  nargs = 2;
+     } else {
+	  cmd = "SELECT localuserid,foreign_userid,attribs_authorised,user_notify FROM pr_users_view "
+	       " WHERE userid = $1";
+	  nargs = 1;
+     }
+     
+     r = PQexecParams(c, cmd, nargs, NULL, pvals, NULL, NULL, 0);
      n = (PQresultStatus(r) == PGRES_TUPLES_OK) ? PQntuples(r) : 0;
      for (i = 0; i<n; i++) {
 	  char *u = PQgetvalue(r, i, 0);
@@ -1575,19 +1606,25 @@ static int add_user_attribs(PGconn *c, int64_t uid, int ver, char *crit, List *p
      return n;
 }
 
-static int add_clist_attribs(PGconn *c, int64_t uid, int ver, char *crit, List *pl)
+static int add_clist_attribs(PGconn *c, char *uid, int ver, char *target_contactlist, List *pl)
 {
-     char cmd[512];
-     int i, n;
+     const char *cmd, *pvals[10];
+     int i, n, nargs;
      PGresult *r;
      
      /* query the contact lists */
-     sprintf(cmd, "SELECT contactlistid,presence_attribs_authorised,contact_list_notify FROM contactlists_view"
-	     " WHERE userid = %lld AND presence_attribs_authorised IS NOT NULL AND %s",
-	     uid, 
-	     crit ? crit : "TRUE");
-     
-     r = PQexec(c, cmd);	  
+     pvals[0] = uid;
+     pvals[1] = target_contactlist;
+     if (target_contactlist != NULL) {
+	  cmd = "SELECT contactlistid,presence_attribs_authorised,contact_list_notify FROM contactlists_view"
+	       " WHERE userid = $1 AND presence_attribs_authorised IS NOT NULL AND contactlistid=$2";
+	  nargs = 2;
+     } else { 
+	  cmd = "SELECT contactlistid,presence_attribs_authorised,contact_list_notify FROM contactlists_view"
+	       " WHERE userid = $1 AND presence_attribs_authorised IS NOT NULL";	
+	  nargs = 1;
+     }
+     r = PQexecParams(c, cmd, nargs, NULL, pvals, NULL, NULL, 0);	  
      n = (PQresultStatus(r) == PGRES_TUPLES_OK) ? PQntuples(r) : 0;
      
      for (i = 0; i<n; i++) {
@@ -1627,7 +1664,7 @@ GetAttributeList_Response_t handle_get_attribs(RequestInfo_t *ri, GetAttributeLi
      void *u;
      ContactList_t ctl;
      
-     char cmd[512], tmp1[DEFAULT_BUF_LEN], tmp2[DEFAULT_BUF_LEN*2];
+     char cmd[512];
      PGresult *r;
      PGconn *c = ri->c;
      
@@ -1640,8 +1677,8 @@ GetAttributeList_Response_t handle_get_attribs(RequestInfo_t *ri, GetAttributeLi
      pl = gwlist_create();
      dl = gwlist_create();
      if (ul == NULL && cl == NULL) { /* return all. */
-	  add_user_attribs(c, uid, ri->ver, NULL, pl);
-	  add_clist_attribs(c, uid,ri->ver, NULL, pl);	  
+	  add_user_attribs(c, ri->_uid, ri->ver, NULL, pl);
+	  add_clist_attribs(c, ri->_uid,ri->ver, NULL, pl);	  
      } 
 
      if (ul) 
@@ -1655,11 +1692,7 @@ GetAttributeList_Response_t handle_get_attribs(RequestInfo_t *ri, GetAttributeLi
 		    else 
 			 panic(0, "unexpected object type: %d [%s]", 
 			       CSP_MSG_TYPE(u), csp_obj_name(CSP_MSG_TYPE(u)));
-		    PQ_ESCAPE_STR_LOWER(c,  s, tmp1);
-		    
-		    sprintf(tmp2, "(localuserid='%.128s' OR foreign_userid = '%.128s')", 
-			    tmp1, tmp1);
-		    if (add_user_attribs(c, uid, ri->ver, tmp2, pl) < 1) {
+		    if (add_user_attribs(c, ri->_uid, ri->ver, s, pl) < 1) {
 			 Octstr *_x = octstr_format("Unknown UserID: %s", (char *)s);
 			 void *rs = csp_msg_new(DetailedResult, NULL, 
 						FV(code,531), 
@@ -1676,11 +1709,7 @@ GetAttributeList_Response_t handle_get_attribs(RequestInfo_t *ri, GetAttributeLi
 	       if ((ctl = gwlist_get(cl, i)) != NULL) {
 		    char *s = (void *)ctl->str;
 
-		    PQ_ESCAPE_STR_LOWER(c,  s, tmp1);
-		    
-		    sprintf(tmp2, "contactlistid='%.128s'", 
-			    tmp1);
-		    if (add_clist_attribs(c, uid, ri->ver, tmp2, pl) < 1) {
+		    if (add_clist_attribs(c, ri->_uid, ri->ver, s, pl) < 1) {
 			 Octstr *_x = octstr_format("Unknown Contactlist: %s", (char *)s);
 			 void *rs = csp_msg_new(DetailedResult, NULL, 
 						FV(code,700), 
@@ -1867,13 +1896,15 @@ Status_t handle_pres_subscribe(RequestInfo_t *ri, SubscribePresence_Request_t re
      ContactList_t ctl;
      char *fld1, *fld2;
      char xid[DEFAULT_BUF_LEN], xdomain[DEFAULT_BUF_LEN];     
-     char cmd[512], tmp1[DEFAULT_BUF_LEN], tmp2[DEFAULT_BUF_LEN*2];
-     char tmp3[DEFAULT_BUF_LEN*2 + 1], val1[DEFAULT_BUF_LEN], val2[DEFAULT_BUF_LEN];
+     char cmd[512];
+     char tmp3[DEFAULT_BUF_LEN*2 + 1];
      Sender_t st = NULL;
      Octstr *clientid = ri->clientid;
      PGresult *r;
      PGconn *c = ri->c;
      struct PresWatcher pw;
+     const char *pvals[10];
+     int nargs = 0;
      
      gw_assert(req);
           
@@ -1889,18 +1920,15 @@ Status_t handle_pres_subscribe(RequestInfo_t *ri, SubscribePresence_Request_t re
 
      if (!ri->is_ssp) {
 	  fld1 = "sessid";
-	  sprintf(val1, "%lld", sid);
+	  pvals[nargs++] = ri->_sessid;
 	  fld2 = NULL;
      } else  {
-	  char tmp[DEFAULT_BUF_LEN];
 	  fld1 = "foreign_userid";
-	  PQ_ESCAPE_STR(c, octstr_get_cstr(ri->userid), tmp);
-	  sprintf(val1, "'%.128s'", tmp);
+	  pvals[nargs++] = octstr_get_cstr(ri->userid);
 
 	  if (octstr_len(clientid) > 0) {
 	       fld2 = "foreign_clientid";
-	       PQ_ESCAPE_STR(c, octstr_get_cstr(clientid), tmp);
-	       sprintf(val2, "'%.128s'", tmp);
+	       pvals[nargs++] = octstr_get_cstr(clientid);
 	  } else 
 	       fld2 = NULL;
      }
@@ -1920,9 +1948,7 @@ Status_t handle_pres_subscribe(RequestInfo_t *ri, SubscribePresence_Request_t re
 			  CSP_MSG_TYPE(u), csp_obj_name(CSP_MSG_TYPE(u)));
 	       
 	       extract_id_and_domain(s, xid, xdomain);
-	       PQ_ESCAPE_STR_LOWER(c, xid, tmp1);
-	       PQ_ESCAPE_STR_LOWER(c, xdomain, tmp2);
-	       xuid = get_userid(c, tmp1, tmp2, &islocal);
+	       xuid = get_userid(c, xid, xdomain, &islocal);
 	       
 	       if (xuid < 0 && islocal) {
 		    Octstr *_x = octstr_format("Unknown UserID: %s", s);
@@ -1939,28 +1965,32 @@ Status_t handle_pres_subscribe(RequestInfo_t *ri, SubscribePresence_Request_t re
 		    int64_t p_id = -1;
 
 		    ADD_UID(xuid);
-		    sprintf(cmd, "DELETE FROM presence_watchlists WHERE %s=%s %s %s%s%s AND userid = %lld; "
-			    "INSERT INTO presence_watchlists (userid,%s %s %s,attribs_requested) "
-			    "VALUES (%lld, %s %s %s, %lu) RETURNING id",
-			    
-			    fld1, val1, 
+		    sprintf(cmd, "DELETE FROM presence_watchlists WHERE %s=$1 %s %s%s%s AND userid = %lld; ",
+			    fld1,  
 			    fld2 ? " AND " : "", /* another criterion? */
 			    fld2 ? fld2 : "",
 			    fld2 ? "=" : "",
-			    fld2 ? val2 : "",
-			    xuid, 
-			    
+			    fld2 ? "$2" : "",
+			    xuid);
+		    r = PQexecParams(c, cmd, nargs, NULL, pvals, NULL, NULL, 0);
+		    PQclear(r);
+		    
+		    
+		    sprintf(cmd, "INSERT INTO presence_watchlists (userid,%s %s %s,attribs_requested) "
+			    "VALUES (%lld, $1 %s %s, %lu) RETURNING id",			    			    
 			    fld1, 
 			    fld2 ? "," : "",
 			    fld2 ? fld2 : "",
 			    
-			    xuid, val1,
+			    xuid, 
 			    
 			    fld2 ? "," : "",
-			    fld2 ? val2 : "",
+			    fld2 ? "$2" : "",
 
-			    attribs);			 
-		    r = PQexec(c, cmd);
+			    attribs);	
+		    
+		    r = PQexecParams(c, cmd, nargs, NULL, pvals, NULL, NULL, 0);
+
 		    if (PQresultStatus(r) != PGRES_TUPLES_OK) 
 			 warning(0, "failed to queue presence subscription: %s", 
 				 PQerrorMessage(c));
@@ -1986,9 +2016,9 @@ Status_t handle_pres_subscribe(RequestInfo_t *ri, SubscribePresence_Request_t re
 
      /* Now handle the contactlist presence subscription. */
      if (ri->is_ssp)
-       sprintf(tmp3, "FALSE");
+	  sprintf(tmp3, "FALSE");
      else 
-       sprintf(tmp3, "userid = %lld", uid); /* must be a list for the user. */
+	  sprintf(tmp3, "userid = %lld", uid); /* must be a list for the user. */
      for (i = 0, n = gwlist_len(cl); i<n; i++)
 	  if ((ctl = gwlist_get(cl, i)) != NULL) {
 	       int64_t cid;
@@ -1996,10 +2026,7 @@ Status_t handle_pres_subscribe(RequestInfo_t *ri, SubscribePresence_Request_t re
 	       
 	       extract_id_and_domain((char *)ctl->str, xid, xdomain);
 	       
-	       PQ_ESCAPE_STR_LOWER(c, xid, tmp1);
-	       PQ_ESCAPE_STR_LOWER(c, xdomain, tmp2);
-	       
-	       cid = get_contactlist(c, tmp1, tmp2, tmp3, &islocal);
+	       cid = get_contactlist(c, xid, xdomain, tmp3, &islocal);
 	       
 	       if (cid < 0) {
 		    Octstr *s = octstr_format("No such contact list: %s", (void *)ctl->str);
@@ -2154,7 +2181,7 @@ Status_t handle_pres_unsubscribe(RequestInfo_t *ri, UnsubscribePresence_Request_
      void *u;
      ContactList_t ctl;
      char xid[DEFAULT_BUF_LEN], xdomain[DEFAULT_BUF_LEN];     
-     char cmd[512], tmp1[DEFAULT_BUF_LEN], tmp2[DEFAULT_BUF_LEN*2];
+     char cmd[512];
      char tmp3[DEFAULT_BUF_LEN*2 + 1];
      Sender_t st = NULL;
      Octstr *clientid = ri->clientid;
@@ -2184,9 +2211,7 @@ Status_t handle_pres_unsubscribe(RequestInfo_t *ri, UnsubscribePresence_Request_
 			  CSP_MSG_TYPE(u), csp_obj_name(CSP_MSG_TYPE(u)));
 	       
 	       extract_id_and_domain(s, xid, xdomain);
-	       PQ_ESCAPE_STR_LOWER(c, xid, tmp1);
-	       PQ_ESCAPE_STR_LOWER(c, xdomain, tmp2);
-	       xuid = get_userid(c, tmp1, tmp2, &islocal);
+	       xuid = get_userid(c, xid, xdomain, &islocal);
 	       
 	       if (xuid < 0 && islocal) {
 		    Octstr *_x = octstr_format("Unknown UserID: %s", s);
@@ -2228,10 +2253,7 @@ Status_t handle_pres_unsubscribe(RequestInfo_t *ri, UnsubscribePresence_Request_
 	       
 	       extract_id_and_domain((char *)ctl->str, xid, xdomain);
 	       
-	       PQ_ESCAPE_STR_LOWER(c, xid, tmp1);
-	       PQ_ESCAPE_STR_LOWER(c, xdomain, tmp2);
-	       
-	       cid = get_contactlist(c, tmp1, tmp2, tmp3, &islocal);
+	       cid = get_contactlist(c, xid, xdomain, tmp3, &islocal);
 	       
 	       if (cid < 0) {
 		    Octstr *s = octstr_format("No such contact list: %s", (void *)ctl->str);
@@ -2371,20 +2393,19 @@ Status_t handle_pres_auth_user(RequestInfo_t *ri, PresenceAuth_User_t req  )
      int  n, islocal;
      Result_t rs;     
      char xid[DEFAULT_BUF_LEN], xdomain[DEFAULT_BUF_LEN];     
-     char cmd[512],  tmp1[DEFAULT_BUF_LEN], tmp2[DEFAULT_BUF_LEN], tmp4[DEFAULT_BUF_LEN], tmp3[DEFAULT_BUF_LEN], *s;
+     char cmd[512], tmp3[DEFAULT_BUF_LEN], *s;
      char field[32], val[256];
      PGresult *r;
      PGconn *c = ri->c;
+     const char *pvals[5];
+     int nargs;
      
      gw_assert(req);
      
      /* Find the user, if local. */
      s = req->user ? (char *)req->user->str : "";
      extract_id_and_domain(s, xid, xdomain);
-     PQ_ESCAPE_STR_LOWER(c, xid, tmp1);
-     PQ_ESCAPE_STR_LOWER(c, xdomain, tmp2);
-     xuid = get_userid(c, tmp1, tmp2, &islocal);
-     
+     xuid = get_userid(c, xid, xdomain, &islocal);     
      if (xuid < 0 && islocal) {
 	  Octstr *_x = octstr_format("Unknown UserID: %s", s);
 	  rs = csp_msg_new(Result, NULL, 
@@ -2410,17 +2431,21 @@ Status_t handle_pres_auth_user(RequestInfo_t *ri, PresenceAuth_User_t req  )
 
      if (xuid >= 0) {
 	  strcpy(field, "local_userid");
+	  nargs = 0;
 	  sprintf(val, "%lld", xuid);
      } else {
 	  strcpy(field, "foreign_userid");
-	  sprintf(val, "'%.128s%s%.128s'", 
-		  tmp1, tmp2[0] ? "@" : "", tmp2);
+	  pvals[0] = xid;
+	  pvals[1] = xdomain[0] ? "@" : "";
+	  pvals[2] = xdomain;
+	  nargs = 3;
+	  sprintf(val, "$1 || $2 || $3");
      }
      
-     sprintf(cmd, "UPDATE presence_auth_authorisations SET %s=%s WHERE userid=%lld AND %s RETURNING id",
-	     field, val, uid, tmp4);
+     sprintf(cmd, "UPDATE presence_user_authorisations SET %s WHERE userid=%lld AND %s=%s RETURNING id",
+	     tmp3, uid, field, val);
 
-     r = PQexec(c, cmd);
+     r = PQexecParams(c, cmd, nargs, NULL, pvals, NULL, NULL, 0);
      n = (PQresultStatus(r) == PGRES_TUPLES_OK) ? PQntuples(r) : 0;
      
      PQclear(r);
@@ -2430,7 +2455,7 @@ Status_t handle_pres_auth_user(RequestInfo_t *ri, PresenceAuth_User_t req  )
 		  "VALUES (%lld, %s, %lu)",
 		  field, uid, val, 
 		  req->accept ? attribs : ~attribs); /* authorise all but mentioned. XXX correct? */
-	  r  = PQexec(c, cmd);
+	  r = PQexecParams(c, cmd, nargs, NULL, pvals, NULL, NULL, 0);
 	  PQclear(r); /* ignore result. */
      } 
      
@@ -2483,7 +2508,7 @@ GetPresence_Response_t handle_get_presence(RequestInfo_t *ri, GetPresence_Reques
      void *u;
      ContactList_t ctl;
      char xid[DEFAULT_BUF_LEN], xdomain[DEFAULT_BUF_LEN];     
-     char cmd[512], tmp1[DEFAULT_BUF_LEN], tmp2[DEFAULT_BUF_LEN*2];
+     char cmd[512];
      char tmp3[DEFAULT_BUF_LEN*2 + 1];
      Sender_t st = NULL;
      Octstr *clientid = ri->clientid;
@@ -2537,9 +2562,7 @@ GetPresence_Response_t handle_get_presence(RequestInfo_t *ri, GetPresence_Reques
 	       s = xuser ? (void *)xuser->str : "";
 	       
 	       extract_id_and_domain(s, xid, xdomain);
-	       PQ_ESCAPE_STR_LOWER(c, xid, tmp1);
-	       PQ_ESCAPE_STR_LOWER(c, xdomain, tmp2);
-	       xuid = get_userid(c, tmp1, tmp2, &islocal);
+	       xuid = get_userid(c, xid, xdomain, &islocal);
 	       
 	       if (xuid < 0 && islocal) {
 		    Octstr *_x = octstr_format("Unknown UserID: %s", s);
@@ -2611,12 +2634,8 @@ GetPresence_Response_t handle_get_presence(RequestInfo_t *ri, GetPresence_Reques
 	       int64_t cid;
 	       int islocal, j, m;
 	       
-	       extract_id_and_domain((char *)ctl->str, xid, xdomain);
-	       
-	       PQ_ESCAPE_STR_LOWER(c, xid, tmp1);
-	       PQ_ESCAPE_STR_LOWER(c, xdomain, tmp2);
-	       
-	       cid = get_contactlist(c, tmp1, tmp2, tmp3, &islocal);
+	       extract_id_and_domain((char *)ctl->str, xid, xdomain);	       
+	       cid = get_contactlist(c, xid, xdomain, tmp3, &islocal);
 	       
 	       if (cid < 0) {
 		    Octstr *s = octstr_format("No such contact list: %s", (void *)ctl->str);

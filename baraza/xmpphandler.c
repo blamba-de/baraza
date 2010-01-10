@@ -976,10 +976,21 @@ static void s2s_iks_handler(int fd, int revents, void *x)
 	       Octstr *key = octstr_format("%d", fd);
 	       dict_put(incoming, key, NULL); /* remove it from the dict. */
 	       octstr_destroy(key);    		    
-	  } else  /* outgoing: simply mark it as dead, we'll remove it 
-		    * when looking for outgoing connections.
-		    */
+	  } else {  /* Mark it as dead, remove from outgoing list, destroy */
+	       Octstr *xkey = MAKE_CONN_KEY(xconn->first_domain, xconn->our_domain);
+	       List *l = dict_get(outgoing, xkey);
+	       
 	       SET_XMPP_CONN_STATE(xconn, XMPP_DEAD);
+
+	       if (l) {
+		    gwlist_lock(l);
+		    gwlist_delete_equal(l, xconn);		    
+		    gwlist_unlock(l);
+	       }
+	       /* destroy it */
+	       free_xmppconn(xconn);
+	       octstr_destroy(xkey);
+	  }
 	  
      } else if (revents & POLLIN) 
 	  gwlist_produce(connlist, x); /* so we don't block because of long-running tasks. */

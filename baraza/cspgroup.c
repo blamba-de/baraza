@@ -20,27 +20,28 @@ static int set_properties(PGconn *c, const char *table, const char *fkey,
 			  int64_t fkey_id, List *plist)
 {
      char cmd[512];
-     char tmp1[DEFAULT_BUF_LEN];
-     char tmp2[DEFAULT_BUF_LEN];
      Property_t p;
      PGresult *r;
      int i, n;
+     const char *pvals[10];
      
      for (i = 0, n = gwlist_len(plist); i<n; i++)
 	  if ((p = gwlist_get(plist, i)) != NULL && 
 	       p->name != NULL) {
-	       PQ_ESCAPE_STR(c, (char *)p->name->str, tmp1);
-	       PQ_ESCAPE_STR(c, p->value ? (void *)p->value->str : "", tmp2);
+
+	       pvals[0] = (char *)p->name->str;
+	       pvals[1] = p->value ? (void *)p->value->str : "";
 
 	       /* first delete the item. */
-	       sprintf(cmd, "DELETE FROM %s WHERE %s = %lld AND item = '%.128s'", table, fkey, fkey_id, 
-		       tmp1);
-	       r = PQexec(c, cmd);
+	       sprintf(cmd, "DELETE FROM %s WHERE %s = %lld AND item = $1", table, fkey, fkey_id);
+
+	       r = PQexecParams(c, cmd, 1, NULL, pvals, NULL, NULL, 0);
 	       PQclear(r);
 	       
-	       sprintf(cmd, "INSERT INTO %s (%s, item, value) VALUES (%lld, '%.128s', '%.128s')", 
-		       table, fkey, fkey_id, tmp1, tmp2);
-	       r = PQexec(c, cmd);
+	       sprintf(cmd, "INSERT INTO %s (%s, item, value) VALUES (%lld, $1, $2)", 
+		       table, fkey, fkey_id);
+	       r = PQexecParams(c, cmd, 2, NULL, pvals, NULL, NULL, 0);
+
 	       if (PQresultStatus(r) != PGRES_COMMAND_OK) {
 		    PQclear(r);
 		    return -1;
@@ -213,33 +214,34 @@ static WelcomeNote_t get_welcome_note(PGconn *c, int64_t gid, int bin)
 static void set_welcome_note(PGconn *c, int64_t gid, WelcomeNote_t w)
 {
      PGresult *r;
-     char *tmp5, tmp3[DEFAULT_BUF_LEN], tmp1[64];
-     Octstr *cmd;
-
-     PQ_ESCAPE_STR(c, w && w->ctype ? w->ctype->str : (void *)"text/plain" , tmp3);
-     if (w && w->data) { /* escape it. */
-	  Octstr *x = csp_String_to_bstr(w->data);
+     char tmp1[64];
+     Octstr *x = NULL;
+     const char *pvals[10];
+     int pfrmt[10] = {0}, plens[10] = {0};
+     
+     pvals[0] = w && w->ctype ? w->ctype->str : (void *)"text/plain";
+     if (w && w->data) { 
 	  char *enc = csp_String_to_cstr(w->enc);
-	  size_t wdlen;
 
+	  x = csp_String_to_bstr(w->data);
 	  if (x == NULL)
 	       x = octstr_create("");
 	  if (enc && strcasecmp(enc, "base64") == 0)  /* base64 decode. */
 	       octstr_base64_to_binary(x);
-	  tmp5 = (void *)PQescapeBytea((void *)octstr_get_cstr(x), octstr_len(x), &wdlen);    
-	  octstr_destroy(x);
+	  
+	  pvals[1] = octstr_get_cstr(x);
+	  plens[1] = octstr_len(x);
+	  pfrmt[1] = 1;	  
      } else 
-	  tmp5 = NULL;
+	  pvals[1] = NULL;
      sprintf(tmp1, "%lld", gid);
-     cmd = octstr_format("UPDATE groups SET welcome_note = E'%s'::bytea, welcome_note_ctype = '%s' "
-			 " WHERE id = %s", tmp5 ? tmp5 : "", tmp3, tmp1);
-
-     r = PQexec(c, octstr_get_cstr(cmd));
-     octstr_destroy(cmd);
+     pvals[2] = tmp1;
+     
+     r = PQexecParams(c, "UPDATE groups SET welcome_note = $2, welcome_note_ctype = $1 "
+		      " WHERE id = $3", 
+		      3, NULL, pvals, plens, pfrmt, 0);     
      PQclear(r);
-
-     if (tmp5) 
-	  PQfreemem(tmp5);
+     octstr_destroy(x);
 }
 
 static Result_t join_group(RequestInfo_t *ri, 
@@ -254,8 +256,7 @@ static Result_t join_group(RequestInfo_t *ri,
 {
      char cmd[512], *screen_name;
      char tmp1[DEFAULT_BUF_LEN*2+1];
-     char tmp2[DEFAULT_BUF_LEN];
-     char val[DEFAULT_BUF_LEN], sid[100];
+     char *sid;
      int i, sname_exists = 0;
      PGconn *c = ri->c;
      int ver = ri->ver;
@@ -270,6 +271,8 @@ static Result_t join_group(RequestInfo_t *ri,
      int n;
      UserList_t ulist;
      UserMapList_t umlist;
+     const char *pvals[10];
+     int nargs;
      
      /* first do decision tree (Sec. 10.4 of CSP):
       * - check reject list
@@ -278,16 +281,17 @@ static Result_t join_group(RequestInfo_t *ri,
       */
      if (ri->is_ssp) {
 	  fld = "foreign_userid";
-	  PQ_ESCAPE_STR(ri->c, octstr_get_cstr(ri->userid), val);
-	  strncpy(sid, "NULL", sizeof sid);
+	  pvals[0] = octstr_get_cstr(ri->userid);
+	  sid = NULL;
      } else {
 	  fld = "local_userid";
-	  sprintf(val, "%lld", uid);
-	  sprintf(sid, "%lld", ri->sessid);
+	  pvals[0] = ri->_uid;
+	  sid =  ri->_sessid;
      }
-     sprintf(cmd, "SELECT id FROM group_reject_list WHERE %s = '%.128s' AND groupid=%lld ", 
-	     fld, val, gid);
-     r = PQexec(c, cmd);
+
+     sprintf(cmd, "SELECT id FROM group_reject_list WHERE %s = $1 AND groupid=%lld ", 
+	     fld,  gid);
+     r = PQexecParams(c, cmd, 1, NULL, pvals, NULL, NULL, 0);
 
      if (PQresultStatus(r) == PGRES_TUPLES_OK && PQntuples(r) > 0) {
 	  rs = csp_msg_new(Result, NULL,
@@ -315,10 +319,10 @@ static Result_t join_group(RequestInfo_t *ri,
 	  
 	  PQclear(r);
 	  /* member of creator. */
-	  sprintf(cmd, "SELECT id FROM group_members WHERE %s = '%.128s' AND groupid = %lld "
+	  sprintf(cmd, "SELECT id FROM group_members WHERE %s = $1 AND groupid = %lld "
 		  " UNION SELECT id FROM groups WHERE id = %lld AND creator = %lld",
-		  fld, val,  gid, gid, uid);
-	  r = PQexec(c, cmd);
+		  fld, gid, gid, uid);
+	  r = PQexecParams(c, cmd, 1, NULL, pvals, NULL, NULL, 0);
 	  
 	  if (PQresultStatus(r) != PGRES_TUPLES_OK || PQntuples(r) <= 0) {
 	       rs = csp_msg_new(Result, NULL,
@@ -333,16 +337,16 @@ static Result_t join_group(RequestInfo_t *ri,
 	  PQclear(r);
      
      /* check that screen name is not taken, check if already in here. */
-     PQ_ESCAPE_STR(c, octstr_get_cstr(clientid), tmp2);
+
      screen_name = (sname && sname->sname) ? (void *)sname->sname->str : octstr_get_cstr(uname);
-     PQ_ESCAPE_STR_LOWER(c, screen_name, tmp1);
      
+     pvals[1] = screen_name;
+     pvals[2] = octstr_get_cstr(clientid);     
      sprintf(cmd, "SELECT gmid,full_userid,screen_name FROM group_members_view WHERE "
 	     " group_id = %lld AND "
-	     " (screen_name = '%.128s' OR %s = '%.128s') AND (clientid = '%.128s' OR clientid IS NULL)", 
-	     gid, tmp1, 
-	     fld, val, tmp2);     
-     r = PQexec(c, cmd);
+	     " (screen_name = $2 OR %s = $1) AND (clientid = $3 OR clientid IS NULL)", 
+	     gid, fld);     
+     r = PQexecParams(c, cmd, 3, NULL, pvals, NULL, NULL, 0);
      n = PQntuples(r);     
      for (i = 0; i <n; i++) {
 	  char *xid = PQgetvalue(r, i, 0);
@@ -367,18 +371,25 @@ static Result_t join_group(RequestInfo_t *ri,
      if (cgid == uid) /* owner is always admin. */
 	  utype = "Admin";
      
-     if (jid >= 0)  /* user exists, do update. */
-	  sprintf(cmd, "UPDATE group_members SET  screen_name='%.128s', " 
-		  " isjoined=true, subscribe_notify=%s, clientid = '%.128s', "
-		  " sessionid = %s WHERE id = %lld RETURNING id",
-		  tmp1, snotify ? "true" : "false", tmp2, sid, jid);
-     else  /* insert. */
+     pvals[3] = snotify ? "true" : "false";     
+     if (jid >= 0) {  /* user exists, do update. */
+	  pvals[0] = sid;
+	  sprintf(cmd, "UPDATE group_members SET  screen_name=$2, " 
+		  " isjoined=true, subscribe_notify=$4, clientid = $3, "
+		  " sessionid = $1 WHERE id = %lld RETURNING id",
+		  jid);
+	  nargs = 4;
+     } else  {/* insert. */
+	  pvals[4] = utype;
+	  pvals[5] = sid;
 	  sprintf(cmd, "INSERT INTO group_members (%s,groupid,member_type,screen_name,clientid,"
 		  "isjoined, subscribe_notify, sessionid) VALUES "
-		  " ('%.128s', %lld, '%s','%.128s', '%.128s', true, %s, %s) RETURNING id",
-		  fld, val, gid, utype, tmp1, tmp2, snotify ? "true" : "false", sid);
-     r = PQexec(c, cmd);
-     
+		  " ($1, %lld, $5,$2, $3,true, $4, $6) RETURNING id",
+		  fld, gid);
+	  nargs = 6;
+     }
+
+     r = PQexecParams(c, cmd, nargs, NULL, pvals, NULL, NULL, 0);     
      if (PQresultStatus(r) != PGRES_TUPLES_OK || PQntuples(r) < 1) {
 	  rs = csp_msg_new(Result, NULL,
 			   FV(code, 500),
@@ -441,19 +452,20 @@ static Result_t join_group(RequestInfo_t *ri,
 
 void join_all_auto_groups(RequestInfo_t *ri)
 {
-     char cmd[512], tmp1[DEFAULT_BUF_LEN*2+10];
      PGresult *r;
      int i, n;
+     const char *pvals[5];
      
-     PQ_ESCAPE_STR(ri->c, octstr_get_cstr(ri->clientid), tmp1);
-     sprintf(cmd, "SELECT groupid, domain, id,screen_name, member_type,subscribe_notify, creator"
-	     " FROM group_members_view WHERE auto_join = 'T' AND "
-	     " local_userid = %lld AND clientid = '%.128s'",
-	     ri->uid, tmp1);
-     
-     r = PQexec(ri->c, cmd);
-     n = PQresultStatus(r) == PGRES_TUPLES_OK ? PQntuples(r) : 0;
+     pvals[0] = ri->_uid;
+     pvals[1] = octstr_get_cstr(ri->clientid);
 
+
+     r = PQexecParams(ri->c, "SELECT groupid, domain, id,screen_name, member_type,subscribe_notify, creator"
+		      " FROM group_members_view WHERE auto_join = 'T' AND "
+		      " local_userid = $1 AND clientid = $2",
+		      2, NULL, pvals, NULL, NULL, 0);
+     
+     n = PQresultStatus(r) == PGRES_TUPLES_OK ? PQntuples(r) : 0;
      for (i = 0; i<n; i++) {
 	  char *x, *g = PQgetvalue(r, i, 0);
 	  char *d = PQgetvalue(r, i, 1);
@@ -464,6 +476,7 @@ void join_all_auto_groups(RequestInfo_t *ri)
 	  int64_t cgid = strtoull(PQgetvalue(r, i, 6), NULL, 10);
 	  ScreenName_t sname;
 	  Result_t rs;
+	  char tmp1[512];
 
 	  sprintf(tmp1, "wv:%.128s%s%.128s", 
 		  g, d && d[0] ? "@" : "", d);
@@ -509,43 +522,42 @@ static void delete_group(PGconn *c, int64_t gid, GroupID_t grp)
 static int leave_group(PGconn *c, int64_t uid, char *fuser, Octstr *clientid, int64_t gid, 
 		       GroupID_t grp, int ver, int reason, int send_msg)
 {
-     char cmd[512], tmp1[2*DEFAULT_BUF_LEN+1];
+     char cmd[512], tmp1[64], tmp2[64];
      PGresult *r;
      int i, n;
      UserList_t ul;
      List *slist = NULL;
      GroupChangeNotice_t gn;
-     char *fld, val[DEFAULT_BUF_LEN];
-
+     char *fld;
+     const char *pvals[10];
+     int nargs = 1;
+     
      if (clientid) {
-	  char tmp2[DEFAULT_BUF_LEN];
-	  PQ_ESCAPE_STR(c, octstr_get_cstr(clientid), tmp2);
-	  sprintf(tmp1, " clientid = '%.128s'", tmp2);
+	  strncpy(tmp1, " clientid = $2", sizeof tmp1);
+	  pvals[1] =  octstr_get_cstr(clientid); 
+	  nargs++;
      } else 
 	  tmp1[0] = 0;
      
      if (fuser) {
 	  fld = "foreign_userid";
-	  sprintf(val, "%.128s", fuser);
+	  pvals[0] = fuser;
      }else  {
 	  fld = "local_userid";
-	  sprintf(val, "%lld", uid);
+	  sprintf(tmp2, "%lld", uid);
+	  pvals[0] = tmp2;
      }
-
-	  
-     
-     sprintf(cmd, "UPDATE group_members gj SET isjoined=false WHERE groupid = %lld AND %s = '%.128s' AND "
+	       
+     sprintf(cmd, "UPDATE group_members gj SET isjoined=false WHERE groupid = %lld AND %s = $1 AND "
 	     " isjoined = true AND "
 	     " %s RETURNING id, (SELECT value FROM group_member_properties gjp WHERE gjp.jid = gj.id AND "
 	     " gjp.item = 'AutoJoin') AS auto_join, screen_name, ismember, clientid, "
-	     "(SELECT full_userid FROM users_view uv WHERE uv.id = gj.local_userid) as full_userid",
-	     
+	     "(SELECT full_userid FROM users_view uv WHERE uv.id = gj.local_userid) as full_userid",	     
 	     gid, 
-	     fld, val,
+	     fld,
 	     tmp1[0] ? tmp1 : "True");
      
-     r = PQexec(c, cmd);
-     
+     r = PQexecParams(c, cmd, nargs, NULL, pvals, NULL, NULL, 0);     
      if (PQresultStatus(r) != PGRES_TUPLES_OK || (n = PQntuples(r)) <= 0) {
 	  PQclear(r);
 	  return 808; /* not joined. */
@@ -642,18 +654,19 @@ static int leave_group(PGconn *c, int64_t uid, char *fuser, Octstr *clientid, in
 /* User leaves all the groups he/she's joined to */
 void leave_all_groups(PGconn *c, int64_t uid, Octstr *clientid, int ver, int reason, int send_msg)  
 {
-     char cmd[512], tmp1[DEFAULT_BUF_LEN*2+10];
+     char tmp1[64], tmp2[64];
+     const char *pvals[10];
      PGresult *r;
      int i, n;
      
-     PQ_ESCAPE_STR(c, octstr_get_cstr(clientid), tmp1);
-     sprintf(cmd, "SELECT groupid, domain, id FROM group_members_view WHERE isjoined = true AND "
-	     " local_userid = %lld AND clientid = '%.128s'",
-	     uid, tmp1);
-
-     r = PQexec(c, cmd);
+     sprintf(tmp2, "%lld", uid);
+     
+     pvals[0] = tmp2;
+     pvals[1] = octstr_get_cstr(clientid);
+     r = PQexecParams(c, "SELECT groupid, domain, id FROM group_members_view WHERE isjoined = true AND "
+		      " local_userid = $1 AND clientid = $2",
+		      2, NULL, pvals, NULL, NULL, 0);     
      n = PQresultStatus(r) == PGRES_TUPLES_OK ? PQntuples(r) : 0;
-
      for (i = 0; i<n; i++) {
 	  char *g = PQgetvalue(r, i, 0);
 	  char *d = PQgetvalue(r, i, 1);
@@ -681,16 +694,15 @@ Status_t handle_create_group(RequestInfo_t *ri, CreateGroup_Request_t req)
      char xgid[DEFAULT_BUF_LEN];
      char xdomain[DEFAULT_BUF_LEN];
      char tmp1[DEFAULT_BUF_LEN];
-     char tmp2[DEFAULT_BUF_LEN];
-     char tmp3[DEFAULT_BUF_LEN];
-     char tmp4[64];
+               
      void *tmp5 = NULL; 
-     Octstr *cmd = NULL;
      PGresult *r;
      Result_t rs;
      WelcomeNote_t w;
      int n;
      PGconn *c = ri->c;
+     const char *pvals[10];
+     int plens[10] = {0}, pfrmt[10] = {0};
      
      extract_id_and_domain(req->gid ? req->gid->str : (void *)"", xgid, xdomain);
      extract_id_and_domain(octstr_get_cstr(ri->userid), xuid, tmp1);
@@ -710,30 +722,32 @@ Status_t handle_create_group(RequestInfo_t *ri, CreateGroup_Request_t req)
 
      w = (req->gprop) ? req->gprop->wnote : NULL;
      
-     PQ_ESCAPE_STR_LOWER(c, xgid, tmp1);
-     PQ_ESCAPE_STR_LOWER(c, xdomain, tmp2);
-     PQ_ESCAPE_STR(c, w && w->ctype ? w->ctype->str : (void *)"text/plain" , tmp3);
+     pvals[0] = xgid;
+     pvals[1] = xdomain;
+     pvals[2] = ri->_uid;
      
-     if (w && w->data) { /* escape it. */
+     if (w && w->data) { 
 	  Octstr *x = csp_String_to_bstr(w->data);
 	  char *enc = csp_String_to_cstr(w->enc);
-	  size_t wdlen;
 
 	  if (x == NULL)
 	       x = octstr_create("");
 	  if (enc && strcasecmp(enc, "base64") == 0)  /* base64 decode. */
 	       octstr_base64_to_binary(x);
-	  tmp5 = (void *)PQescapeBytea((void *)octstr_get_cstr(x), octstr_len(x), &wdlen);    
-	  octstr_destroy(x);
+	  tmp5 = x;    
      } else 
 	  tmp5 = NULL;
-     /* Attempt to insert into DB. */
-     sprintf(tmp4, "%lld", uid);
-     cmd = octstr_format("INSERT INTO groups (groupid, domain,creator, welcome_note,welcome_note_ctype) "
-			 " VALUES (lower('%.128s'), lower('%.128s'), %s, E'%s'::bytea, '%.64s') RETURNING id", 
-			 tmp1, tmp2, tmp4, tmp5 ? tmp5 : "", tmp3);     
+     pvals[3] = tmp5;
+     pfrmt[3] = tmp5 ? 1 : 0;
+     plens[3] = octstr_len(tmp5);
      
-     r = PQexec(c, octstr_get_cstr(cmd));    
+     pvals[4] = w && w->ctype ? w->ctype->str : (void *)"text/plain";
+     
+     /* Attempt to insert into DB. */     
+     r = PQexecParams(c, "INSERT INTO groups (groupid, domain,creator, welcome_note,welcome_note_ctype) "
+			 " VALUES (lower($1), lower($2), $3, $4, $5) RETURNING id", 
+		      5, NULL, pvals, plens, pfrmt, 0);
+
      if (PQresultStatus(r) != PGRES_TUPLES_OK) { /* reply with group exists. */
 	  rs = csp_msg_new(Result, NULL, 
 			   FV(code,801), 
@@ -757,10 +771,8 @@ Status_t handle_create_group(RequestInfo_t *ri, CreateGroup_Request_t req)
 			   FV(descr, csp_String_from_cstr("Complete", Imps_Description)));	  
  done:
      
-     if (tmp5) 
-	  PQfreemem(tmp5);
-
-     octstr_destroy(cmd);
+     
+     octstr_destroy(tmp5);
 
      return csp_msg_new(Status,NULL,  FV(res,rs));	  
 }
@@ -770,15 +782,11 @@ static Result_t get_grp_info(RequestInfo_t *ri, char *grpname,
 			     void *msg, 
 			     char xdomain[], char xgid[], int64_t *gid, int64_t *cgid)
 {
-     char tmp1[DEFAULT_BUF_LEN], tmp2[DEFAULT_BUF_LEN];
      int islocal = 0;
      Result_t rs;
      
-     extract_id_and_domain(grpname, xgid, xdomain);
-     
-     PQ_ESCAPE_STR_LOWER(ri->c, xgid, tmp1);
-     PQ_ESCAPE_STR_LOWER(ri->c, xdomain, tmp2);
-     *gid = get_groupid(ri->c, tmp1, tmp2, &islocal);
+     extract_id_and_domain(grpname, xgid, xdomain);     
+     *gid = get_groupid(ri->c, xgid, xdomain, &islocal);
 
      if (*gid < 0 && islocal) 
 	  rs = csp_msg_new(Result, NULL,
@@ -829,30 +837,29 @@ Status_t handle_delete_group(RequestInfo_t *ri, DeleteGroup_Request_t req)
      PGconn *c = ri->c;
      char xgid[DEFAULT_BUF_LEN];
      char xdomain[DEFAULT_BUF_LEN];
-     char tmp1[DEFAULT_BUF_LEN];
      char cmd[512], *xs;
      PGresult *r;
      Result_t rs;
-     char val[DEFAULT_BUF_LEN], *fld;
-
+     char  *fld;
+     const char *pvals[10];
+     
      if ((rs = get_grp_info(ri, req->gid ? req->gid->str : (void *)"", req, 
 			     xdomain, xgid, &gid, &cgid)) != NULL)
 	  goto done;
 
      if (ri->is_ssp) {
 	  fld = "foreign_userid";
-	  PQ_ESCAPE_STR(ri->c, octstr_get_cstr(ri->userid), val);
+	  pvals[0] = octstr_get_cstr(ri->userid);
      } else {
 	  fld = "local_userid";
-	  sprintf(val, "%lld", uid);
+	  pvals[0] = ri->_uid;
      }
+     pvals[1] = octstr_get_cstr(ri->clientid);
 
-     PQ_ESCAPE_STR(c, octstr_get_cstr(ri->clientid), tmp1);
-     sprintf(cmd, "SELECT member_type FROM group_members WHERE %s = '%.128s' "
-	     "AND groupid = %lld and clientid = '%.128s'",
-	     fld, val, gid, tmp1);
-     r = PQexec(c, cmd);
-
+     sprintf(cmd, "SELECT member_type FROM group_members WHERE %s = $1"
+	     "AND groupid = %lld and clientid = $2",
+	     fld, gid);
+     r = PQexecParams(c, cmd, 2, NULL, pvals, NULL, NULL, 0);
      if (PQresultStatus(r) != PGRES_TUPLES_OK) {
 	  rs = csp_msg_new(Result, NULL, 
 			   FV(code,500), 
@@ -915,32 +922,32 @@ GetGroupMembers_Response_t handle_get_group_members(RequestInfo_t *ri, GetGroupM
      int64_t cgid;
      
      int64_t gid;
-     char tmp1[DEFAULT_BUF_LEN];
+     char tmp1[64];
      char xgid[DEFAULT_BUF_LEN], xdomain[DEFAULT_BUF_LEN];
      Result_t rs = NULL;
      GetGroupMembers_Response_t resp = NULL;
      Admin_t adm;
      Mod_t mod;
      UserList_t ul;
-     char *fld, val[DEFAULT_BUF_LEN];
-
+     char *fld;
+     const char *pvals[10];
+     
      if ((rs = get_grp_info(ri, req->gid ? req->gid->str : (void *)"", req, 
 			     xdomain, xgid, &gid, &cgid)) != NULL)
 	  goto done;
 
      if (ri->is_ssp) {
 	  fld = "foreign_userid";
-	  PQ_ESCAPE_STR(ri->c, octstr_get_cstr(ri->userid), val);
+	  pvals[0] = octstr_get_cstr(ri->userid);
      } else {
 	  fld = "local_userid";
-	  sprintf(val, "%lld", ri->uid);
+	  pvals[0] = ri->_uid;	  
      }
-
-     PQ_ESCAPE_STR(ri->c, octstr_get_cstr(ri->clientid), tmp1);
+     pvals[1] = octstr_get_cstr(ri->clientid);
      sprintf(cmd, "SELECT member_type "
-	     "FROM group_members WHERE groupid = %lld AND %s = '%.128s'  AND clientid = '%.128s'",
-	     gid, fld, val, tmp1);
-     r = PQexec(ri->c, cmd);
+	     "FROM group_members WHERE groupid = %lld AND %s = $1  AND clientid = $2",
+	     gid, fld);
+     r = PQexecParams(ri->c, cmd, 2, NULL, pvals, NULL, NULL, 0);
      
      if (PQresultStatus(r) == PGRES_TUPLES_OK && PQntuples(r) > 0) {
 	  strncpy(tmp1, PQgetvalue(r, 0, 0), sizeof tmp1);
@@ -1072,7 +1079,6 @@ GetJoinedUsers_Response_t handle_get_joined_users(RequestInfo_t *ri, GetJoinedUs
      PGresult *r  = NULL;
      int64_t cgid;     
      int64_t gid;
-     char tmp1[DEFAULT_BUF_LEN];
      char xgid[DEFAULT_BUF_LEN], xdomain[DEFAULT_BUF_LEN];
      Result_t rs = NULL;
 
@@ -1080,25 +1086,26 @@ GetJoinedUsers_Response_t handle_get_joined_users(RequestInfo_t *ri, GetJoinedUs
      int ures_type = -1;
      List *user_list, *admin_list, *mod_list;
      
-     char *fld, val[DEFAULT_BUF_LEN];
-
+     char *fld;
+     const char *pvals[10];
+     
      if ((rs = get_grp_info(ri, req->gid ? req->gid->str : (void *)"", req, 
 			    xdomain, xgid, &gid, &cgid)) != NULL)
 	  goto done;
 
      if (ri->is_ssp) {
 	  fld = "foreign_userid";
-	  PQ_ESCAPE_STR(ri->c, octstr_get_cstr(ri->userid), val);
+	  pvals[0] = octstr_get_cstr(ri->userid);	  
      } else {
 	  fld = "local_userid";
-	  sprintf(val, "%lld", ri->uid);
+	  pvals[0] = ri->_uid;
      }
-     
-     PQ_ESCAPE_STR(ri->c, octstr_get_cstr(ri->clientid), tmp1);
+
+     pvals[1] = octstr_get_cstr(ri->clientid);
      sprintf(cmd, "SELECT member_type "
-	     "FROM group_members WHERE groupid = %lld AND %s = '%.128s'  AND clientid = '%.128s'",
-	     gid, fld, val, tmp1);
-     r = PQexec(ri->c, cmd);
+	     "FROM group_members WHERE groupid = %lld AND %s = $1  AND clientid = $2",
+	     gid, fld);
+     r = PQexecParams(ri->c, cmd, 2, NULL, pvals, NULL, NULL, 0);
      
      if (PQresultStatus(r) == PGRES_TUPLES_OK && PQntuples(r) > 0) {
 	  typ = PQgetvalue(r, 0, 0);
@@ -1240,25 +1247,26 @@ Status_t handle_add_members(RequestInfo_t *ri, AddGroupMembers_Request_t req)
      char tmp1[DEFAULT_BUF_LEN];
      Result_t rs = NULL;     
      List *l, *drl = gwlist_create();
-     char *fld, val[DEFAULT_BUF_LEN];
-
+     char *fld;
+     const char *pvals[10];
+     
      if ((rs = get_grp_info(ri, req->gid ? req->gid->str : (void *)"", req, 
 			     xdomain, xgid, &gid, &cgid)) != NULL)
 	  goto done;
 
      if (ri->is_ssp) {
 	  fld = "foreign_userid";
-	  PQ_ESCAPE_STR(ri->c, octstr_get_cstr(ri->userid), val);
+	  pvals[0] = octstr_get_cstr(ri->userid);	  
      } else {
 	  fld = "local_userid";
-	  sprintf(val, "%lld", ri->uid);
+	  pvals[0] = ri->_uid;
      }
 
-     PQ_ESCAPE_STR(ri->c, octstr_get_cstr(ri->clientid), tmp1);
+     pvals[1] = octstr_get_cstr(ri->clientid);
      sprintf(cmd, "SELECT member_type "
-	     "FROM group_members WHERE groupid = %lld AND %s = '%.128s'  AND clientid = '%.128s'",
-	     gid, fld, val, tmp1);
-     r = PQexec(ri->c, cmd);
+	     "FROM group_members WHERE groupid = %lld AND %s = $1  AND clientid = $2",
+	     gid, fld);
+     r = PQexecParams(ri->c, cmd, 2, NULL, pvals, NULL, NULL, 0);
      
      if (PQresultStatus(r) == PGRES_TUPLES_OK && PQntuples(r) > 0) {
 	  strncpy(tmp1, PQgetvalue(r, 0, 0), sizeof tmp1);
@@ -1317,20 +1325,21 @@ Status_t handle_add_members(RequestInfo_t *ri, AddGroupMembers_Request_t req)
 	  if (islocal) {
 	       fld = "local_userid";
 	       sprintf(tmp1, "%lld", uid);
+	       pvals[0] = tmp1;
 	  } else {	       
-	       PQ_ESCAPE_STR_LOWER(ri->c, uname, tmp1);
+	       pvals[0] = uname;
 	       fld = "foreign_userid";	        /* need to lower-case XXX */
 	  }
 	  sprintf(cmd, "UPDATE group_members SET ismember = true WHERE "
-		  "%s = '%.128s' AND groupid = %lld RETURNING id", fld, tmp1, gid);
-	  r = PQexec(ri->c, cmd);
+		  "%s = $1 AND groupid = %lld RETURNING id", fld, gid);
+	  r = PQexecParams(ri->c, cmd, 1, NULL, pvals, NULL, NULL, 0);
 
 	  if (PQresultStatus(r) != PGRES_TUPLES_OK || PQntuples(r) <= 0) { /* not found, insert. */
 	       PGresult *r2;
 	       sprintf(cmd, "INSERT into group_members (groupid, ismember, %s) VALUES "
-		       "(%lld, true, '%.128s') ",
-		       fld, gid, tmp1);
-	       r2 = PQexec(ri->c, cmd);
+		       "(%lld, true, $1) ",
+		       fld, gid);
+	       r2 = PQexecParams(ri->c, cmd, 1, NULL, pvals, NULL, NULL, 0);
 	       PQclear(r2);
 	  }
 	  PQclear(r);	  
@@ -1359,26 +1368,27 @@ Status_t handle_del_members(RequestInfo_t *ri, RemoveGroupMembers_Request_t req)
      char xgid[DEFAULT_BUF_LEN], xdomain[DEFAULT_BUF_LEN];
      Result_t rs = NULL;     
      List *l, *drl = gwlist_create();
-     char *fld, val[DEFAULT_BUF_LEN];
-
+     char *fld;
+     const char *pvals[10];
+     
      if ((rs = get_grp_info(ri, req->gid ? req->gid->str : (void *)"", req, 
 			     xdomain, xgid, &gid, &cgid)) != NULL)
 	  goto done;
      
      if (ri->is_ssp) {
 	  fld = "foreign_userid";
-	  PQ_ESCAPE_STR(ri->c, octstr_get_cstr(ri->userid), val);
+	  pvals[0] = octstr_get_cstr(ri->userid);
      } else {
 	  fld = "local_userid";
-	  sprintf(val, "%lld", ri->uid);
-     }
+	  pvals[0] = ri->_uid;
 
-     PQ_ESCAPE_STR(ri->c, octstr_get_cstr(ri->clientid), tmp1);
+     }
+     pvals[1] = octstr_get_cstr(ri->clientid);
+
      sprintf(cmd, "SELECT member_type "
-	     "FROM group_members WHERE groupid = %lld AND %s = '%.128s'  AND clientid = '%.128s'",
-	     gid, fld, val, tmp1);
-     r = PQexec(ri->c, cmd);
-     
+	     "FROM group_members WHERE groupid = %lld AND %s = $1  AND clientid = $2",
+	     gid, fld);
+     r = PQexecParams(ri->c, cmd, 2, NULL, pvals, NULL, NULL, 0);     
      if (PQresultStatus(r) == PGRES_TUPLES_OK && PQntuples(r) > 0) {
 	  strncpy(tmp1, PQgetvalue(r, 0, 0), sizeof tmp1);
 	  typ = tmp1;
@@ -1433,15 +1443,16 @@ Status_t handle_del_members(RequestInfo_t *ri, RemoveGroupMembers_Request_t req)
 	       continue;
 	  }
 	  if (islocal) {
-	       fld = "local_userid";
+	       fld = "local_userid";	       
 	       sprintf(tmp1, "%lld", uid);
+	       pvals[0] = tmp1;
 	  } else {	       
-	       PQ_ESCAPE_STR_LOWER(ri->c, uname, tmp1);
+	       pvals[0] = uname;
 	       fld = "foreign_userid";	       
 	  }
 	  sprintf(cmd, "UPDATE group_members SET ismember = false WHERE "
-		  "%s = '%.128s' and ismember=true AND groupid = %lld RETURNING id", fld, tmp1, gid);
-	  r = PQexec(ri->c, cmd);
+		  "%s = $1 and ismember=true AND groupid = %lld RETURNING id", fld, gid);
+	  r = PQexecParams(ri->c, cmd, 1, NULL, pvals, NULL, NULL, 0);
 
 	  if (PQresultStatus(r) != PGRES_TUPLES_OK || PQntuples(r) <= 0) { /* not found, report error. */
 	       Octstr *err = octstr_format("No such user: %s", uname);
@@ -1482,18 +1493,21 @@ static void update_user_access(PGconn *c, const char *mtype, List *l, int64_t gi
 {
      int i, n;
      char cmd[512];
-     
+     const char *pvals[10];
+
+     pvals[1] = mtype;
      for (i = 0, n = gwlist_len(l); i<n; i++) {
 	  User_t u = gwlist_get(l, i);
 	  UserID_t ux = u ?  (void *)u->user : NULL;
 	  char *uname = ux ? ux->str : (void *)"";
 	  int islocal;
 	  char xuid[DEFAULT_BUF_LEN], xdomain[DEFAULT_BUF_LEN];
-	  char tmp1[DEFAULT_BUF_LEN];
+	  char tmp1[64];
 	  int64_t uid;
 	  char *fld;
 	  PGresult *r;
 
+	  
 	  extract_id_and_domain(uname, xuid, xdomain);
 	  uid = get_userid(c, xuid, xdomain, &islocal);
 	  
@@ -1510,22 +1524,24 @@ static void update_user_access(PGconn *c, const char *mtype, List *l, int64_t gi
 	  }
 	  if (islocal) {
 	       fld = "local_userid";
+	       pvals[0] = tmp1;
 	       sprintf(tmp1, "%lld", uid);
 	  } else {	       
-	       PQ_ESCAPE_STR_LOWER(c, uname, tmp1);
+	       pvals[0] = uname;
 	       fld = "foreign_userid";		    
 	  }
-	  sprintf(cmd, "UPDATE group_members SET ismember = true, member_type = '%s' WHERE "
-		  "%s = '%.128s' AND %s AND groupid = %lld RETURNING id", mtype, fld, tmp1,
+
+	  sprintf(cmd, "UPDATE group_members SET ismember = true, member_type = $2 WHERE "
+		  "%s = $1 AND %s AND groupid = %lld RETURNING id", fld, 
 		  update_mask[0] ? update_mask : " TRUE", gid);
-	  r = PQexec(c, cmd);
+	  r = PQexecParams(c, cmd, 2, NULL, pvals, NULL, NULL, 0);
 	  
 	  if (PQresultStatus(r) != PGRES_TUPLES_OK || PQntuples(r) <= 0) { /* not found, insert. */
 	       PGresult *r2;
 	       sprintf(cmd, "INSERT into group_members (groupid, ismember, member_type, %s) VALUES "
-		       "(%lld, true, '%s', '%.128s') ",
-		       fld, gid, mtype, tmp1);
-	       r2 = PQexec(c, cmd);
+		       "(%lld, true, $2, $1) ",
+		       fld, gid);
+	       r2 = PQexecParams(c, cmd, 2, NULL, pvals, NULL, NULL, 0);
 	       PQclear(r2);
 	  }
 	  PQclear(r);	  
@@ -1545,8 +1561,8 @@ Status_t handle_member_access(RequestInfo_t *ri, MemberAccess_Request_t req)
      char tmp1[DEFAULT_BUF_LEN];
      Result_t rs = NULL;     
      List *drl = gwlist_create();
-     char *fld, val[DEFAULT_BUF_LEN];
-
+     char *fld;
+     const char *pvals[10];
 
      if ((rs = get_grp_info(ri, req->gid ? req->gid->str : (void *)"", req, 
 			     xdomain, xgid, &gid, &cgid)) != NULL)
@@ -1554,17 +1570,17 @@ Status_t handle_member_access(RequestInfo_t *ri, MemberAccess_Request_t req)
      
      if (ri->is_ssp) {
 	  fld = "foreign_userid";
-	  PQ_ESCAPE_STR(ri->c, octstr_get_cstr(ri->userid), val);
+	  pvals[0] = octstr_get_cstr(ri->userid);
      } else {
 	  fld = "local_userid";
-	  sprintf(val, "%lld", ri->uid);
+	  pvals[0] = ri->_uid;
      }
 
-     PQ_ESCAPE_STR(ri->c, octstr_get_cstr(ri->clientid), tmp1);
+     pvals[1] = octstr_get_cstr(ri->clientid);
      sprintf(cmd, "SELECT member_type "
-	     "FROM group_members WHERE groupid = %lld AND %s = '%.128s' AND clientid = '%.128s'",
-	     gid, fld, val, tmp1);
-     r = PQexec(ri->c, cmd);
+	     "FROM group_members WHERE groupid = %lld AND %s = $1 AND clientid = $2",
+	     gid, fld);
+     r = PQexecParams(ri->c, cmd, 2, NULL, pvals, NULL, NULL, 0);
      
      if (PQresultStatus(r) == PGRES_TUPLES_OK && PQntuples(r) > 0) {
 	  strncpy(tmp1, PQgetvalue(r, 0, 0), sizeof tmp1);
@@ -1627,29 +1643,29 @@ GetGroupProps_Response_t handle_get_props(RequestInfo_t *ri, GetGroupProps_Reque
      List *oplist = NULL;
      List *gplist = NULL;
      char xgid[DEFAULT_BUF_LEN], xdomain[DEFAULT_BUF_LEN];
-     char tmp1[DEFAULT_BUF_LEN];
      Result_t rs = NULL;     
      WelcomeNote_t w = NULL;
-     char *fld, val[DEFAULT_BUF_LEN];
-
+     char *fld;
+     const char *pvals[10];
+     
      if ((rs = get_grp_info(ri, req->gid ? req->gid->str : (void *)"", req, 
 			    xdomain, xgid, &gid, &cgid)) != NULL)
 	  goto done;
      
      if (ri->is_ssp) {
 	  fld = "foreign_userid";
-	  PQ_ESCAPE_STR(ri->c, octstr_get_cstr(ri->userid), val);
+	  pvals[0] = octstr_get_cstr(ri->userid);
      } else {
 	  fld = "local_userid";
-	  sprintf(val, "%lld", ri->uid);
+	  pvals[0] = ri->_uid;
+
      }
 
-     PQ_ESCAPE_STR(ri->c, octstr_get_cstr(ri->clientid), tmp1);
+     pvals[1] = octstr_get_cstr(ri->clientid);
      sprintf(cmd, "SELECT member_type, id "
-	     "FROM group_members WHERE groupid = %lld AND %s = '%.128s' AND clientid = '%.128s'",
-	     gid, fld, val, tmp1);
-     r = PQexec(ri->c, cmd);
-     
+	     "FROM group_members WHERE groupid = %lld AND %s = $1 AND clientid = $2",
+	     gid, fld);
+     r = PQexecParams(ri->c, cmd, 2, NULL, pvals, NULL, NULL, 0);     
      if (PQresultStatus(r) == PGRES_TUPLES_OK && PQntuples(r) > 0) {
 	  typ = PQgetvalue(r, 0, 0);
 	  found = 1;
@@ -1695,10 +1711,10 @@ Status_t handle_set_props(RequestInfo_t *ri, SetGroupProps_Request_t req)
      int64_t cgid;     
      int64_t gid, jid;
      char xgid[DEFAULT_BUF_LEN], xdomain[DEFAULT_BUF_LEN];
-     char tmp1[DEFAULT_BUF_LEN];
      Result_t rs = NULL;     
      List *drl = gwlist_create();
-     char *fld, val[DEFAULT_BUF_LEN];
+     char *fld;
+     const char *pvals[10];
      
      if ((rs = get_grp_info(ri, req->gid ? req->gid->str : (void *)"", req, 
 			    xdomain, xgid, &gid, &cgid)) != NULL)
@@ -1706,17 +1722,17 @@ Status_t handle_set_props(RequestInfo_t *ri, SetGroupProps_Request_t req)
 
      if (ri->is_ssp) {
 	  fld = "foreign_userid";
-	  PQ_ESCAPE_STR(ri->c, octstr_get_cstr(ri->userid), val);
+	  pvals[0] = octstr_get_cstr(ri->userid);
      } else {
 	  fld = "local_userid";
-	  sprintf(val, "%lld", ri->uid);
+	  pvals[0] = ri->_uid;
+
      }
-     PQ_ESCAPE_STR(ri->c, octstr_get_cstr(ri->clientid), tmp1);
+     pvals[1] = octstr_get_cstr(ri->clientid);
      sprintf(cmd, "SELECT member_type, id "
-	     "FROM group_members WHERE groupid = %lld AND %s = '%.128s' AND clientid = '%.128s'",
-	     gid, fld, val, tmp1);
-     r = PQexec(ri->c, cmd);
-     
+	     "FROM group_members WHERE groupid = %lld AND %s = $1 AND clientid = $2",
+	     gid, fld);
+     r = PQexecParams(ri->c, cmd, 2, NULL, pvals, NULL, NULL, 0);          
      if (PQresultStatus(r) == PGRES_TUPLES_OK && PQntuples(r) > 0) {
 	  typ = PQgetvalue(r, 0, 0);
 	  found = 1;
@@ -1766,6 +1782,7 @@ static void reject_user(RequestInfo_t *ri, char *user, int64_t gid, int64_t cgid
      char *fld;
      PGconn *c = ri->c;
      PGresult *r;
+     const char *pvals[10] = {NULL};
      
      extract_id_and_domain(user, xid, tmp1);
      uid = get_userid(c, xid, tmp1, &islocal);
@@ -1782,22 +1799,23 @@ static void reject_user(RequestInfo_t *ri, char *user, int64_t gid, int64_t cgid
      } else if (uid == cgid) /* can not reject owner. */
 	  return;
      
-     if (uid >= 0) {
+     if (uid >= 0) {	  
 	  fld = "local_userid";
 	  sprintf(tmp1, "%lld", uid);
+	  pvals[0] = tmp1;
      } else {
 	  fld = "foreign_userid";
-	  sprintf(tmp1, "'%.128s'", user);
+	  pvals[0] = user;
      }
      
-     sprintf(cmd, "SELECT id FROM group_reject_list WHERE groupid = %lld AND %s = %s",
-	     gid, fld, tmp1);
-     r = PQexec(c, cmd);
+     sprintf(cmd, "SELECT id FROM group_reject_list WHERE groupid = %lld AND %s = $1",
+	     gid, fld);
+     r = PQexecParams(ri->c, cmd, 1, NULL, pvals, NULL, NULL, 0);          
      if (PQresultStatus(r) != PGRES_TUPLES_OK || PQntuples(r) <= 0) {
 	  PGresult *r2;
-	  sprintf(cmd, "INSERT INTO group_reject_list (groupid, %s) VALUES (%lld, %s)", 
-		  fld, gid, tmp1);
-	  r2 = PQexec(c, cmd);
+	  sprintf(cmd, "INSERT INTO group_reject_list (groupid, %s) VALUES (%lld, $1)", 
+		  fld, gid);
+	  r2 = PQexecParams(ri->c, cmd, 1, NULL, pvals, NULL, NULL, 0);          
 	  PQclear(r2);
 
 	  leave_group(c, uid, (uid>=0) ? NULL : user, NULL, 
@@ -1808,12 +1826,13 @@ static void reject_user(RequestInfo_t *ri, char *user, int64_t gid, int64_t cgid
 
 static void unreject_user(PGconn *c, char *user, int64_t gid)
 {
-     char xid[DEFAULT_BUF_LEN], tmp1[DEFAULT_BUF_LEN];
+     char xid[DEFAULT_BUF_LEN], tmp1[64];
      char cmd[512];
      int64_t uid;
      int islocal;
      char *fld;
      PGresult *r;
+     const char *pvals[10] = {NULL};
      
      extract_id_and_domain(user, xid, tmp1);
      uid = get_userid(c, xid, tmp1, &islocal);
@@ -1822,14 +1841,15 @@ static void unreject_user(PGconn *c, char *user, int64_t gid)
      if (uid >= 0) {
 	  fld = "local_userid";
 	  sprintf(tmp1, "%lld", uid);
+	  pvals[0] = tmp1;
      } else {
 	  fld = "foreign_userid";
-	  sprintf(tmp1, "'%.128s'", user);
+	  pvals[0] = user;
      }
      
-     sprintf(cmd, "DELETE FROM group_reject_list WHERE groupid = %lld AND %s = %s",
-	     gid, fld, tmp1);
-     r = PQexec(c, cmd); /* no error check required as per spec. */
+     sprintf(cmd, "DELETE FROM group_reject_list WHERE groupid = %lld AND %s = $1",
+	     gid, fld);
+     r = PQexecParams(c, cmd, 1, NULL, pvals, NULL, NULL, 0); /* no error check required as per spec. */
      PQclear(r); 
 }
 
@@ -1846,7 +1866,8 @@ RejectList_Response_t handle_reject(RequestInfo_t *ri, RejectList_Request_t req)
      List *l, *xul = NULL, *drl = gwlist_create();
      UserID_t u;
      UserList_t ul = NULL;
-     char *fld, val[DEFAULT_BUF_LEN];
+     char *fld;
+     const char *pvals[10];
      
      if ((rs = get_grp_info(ri, req->gid ? req->gid->str : (void *)"", req, 
 			     xdomain, xgid, &gid, &cgid)) != NULL)
@@ -1854,18 +1875,18 @@ RejectList_Response_t handle_reject(RequestInfo_t *ri, RejectList_Request_t req)
      
      if (ri->is_ssp) {
 	  fld = "foreign_userid";
-	  PQ_ESCAPE_STR(ri->c, octstr_get_cstr(ri->userid), val);
+	  pvals[0] = octstr_get_cstr(ri->userid);
      } else {
 	  fld = "local_userid";
-	  sprintf(val, "%lld", ri->uid);
+	  pvals[0] = ri->_uid;
      }
 
-     PQ_ESCAPE_STR(ri->c, octstr_get_cstr(ri->clientid), tmp1);
+     pvals[1] = octstr_get_cstr(ri->clientid);
      sprintf(cmd, "SELECT member_type "
-	     "FROM group_members WHERE groupid = %lld AND %s = '%.128s' AND clientid = '%.128s'",
-	     gid, fld, val, tmp1);
-     r = PQexec(ri->c, cmd);
+	     "FROM group_members WHERE groupid = %lld AND %s = $1 AND clientid = $2",
+	     gid, fld);
      
+     r = PQexecParams(ri->c, cmd, 2, NULL, pvals, NULL, NULL, 0);     
      if (PQresultStatus(r) == PGRES_TUPLES_OK && PQntuples(r) > 0) {
 	  strncpy(tmp1, PQgetvalue(r, 0, 0), sizeof tmp1);
 	  typ = tmp1;
@@ -1950,28 +1971,27 @@ SubscribeGroupNotice_Response_t handle_subscribe_notice(RequestInfo_t *ri, Subsc
      int64_t jid;     
      int64_t gid, cgid;
      char xgid[DEFAULT_BUF_LEN], xdomain[DEFAULT_BUF_LEN], stype;
-     char tmp1[DEFAULT_BUF_LEN];
      Result_t rs = NULL;     
-     char *fld, val[DEFAULT_BUF_LEN];
-
+     char *fld;
+     const char *pvals[10];
+     
      if ((rs = get_grp_info(ri, req->gid ? req->gid->str : (void *)"", req, 
 			     xdomain, xgid, &gid, &cgid)) != NULL)
 	  goto done;
      
      if (ri->is_ssp) {
 	  fld = "foreign_userid";
-	  PQ_ESCAPE_STR(ri->c, octstr_get_cstr(ri->userid), val);
+	  pvals[0] = octstr_get_cstr(ri->userid);
      } else {
 	  fld = "local_userid";
-	  sprintf(val, "%lld", ri->uid);
+	  pvals[0] = ri->_uid;
      }
-     
-     PQ_ESCAPE_STR(ri->c, octstr_get_cstr(ri->clientid), tmp1);
+
+     pvals[1] = octstr_get_cstr(ri->clientid);     
      sprintf(cmd, "SELECT member_type, id, subscribe_notify "
-	     "FROM group_members WHERE groupid = %lld AND %s = '%.128s' AND clientid = '%.128s'",
-	     gid, fld, val, tmp1);
-     r = PQexec(ri->c, cmd);
-     
+	     "FROM group_members WHERE groupid = %lld AND %s = $1 AND clientid = $2",
+	     gid, fld);
+     r = PQexecParams(ri->c, cmd, 2, NULL, pvals, NULL, NULL, 0);     
      if (PQresultStatus(r) == PGRES_TUPLES_OK && PQntuples(r) > 0) {
 	  char *x;
 	  found = 1;

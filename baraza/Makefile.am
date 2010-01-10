@@ -8,3 +8,6 @@ impsxml2json_SOURCES = impsxml2json.c json.c json.h cspmessages.c cspmessages.h 
 
 EXTRA_DIST = tables.sql cspmessages.def wbxml.def LICENSE VERSION
 
+%.h: %.sql
+	awk-tables-cmd $<
+

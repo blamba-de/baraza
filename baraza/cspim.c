@@ -17,59 +17,6 @@
 #include "utils.h"
 #include "mqueue.h"
 
-#if 0 /* now inherited from cspcommon.h */
-static int verify_sender(PGconn *c, Sender_t sender, int64_t uid, Octstr *userid)
-{
-     char xid[DEFAULT_BUF_LEN], xdomain[DEFAULT_BUF_LEN], buf[512];
-     char tmp1[DEFAULT_BUF_LEN], tmp2[DEFAULT_BUF_LEN], tmp3[DEFAULT_BUF_LEN];
-     
-     if (sender == NULL || sender->u.val == NULL)
-	  return 402;     
-     else if (sender->u.typ == Imps_User) {
-	  User_t u = sender->u.val;
-	  char *xu, *myu;
-	  int offset;
-	  
-	  xu = u->user ? (char *)u->user->str : "";
-	  
-	  offset  =  (strstr(xu, "wv:") == 0) ? 3 : 0; /* some clients do not include the initial 'wv:' */
-
-	  myu = octstr_get_cstr(userid) + offset;
-	  
-	  return (strcasecmp(xu, myu) == 0) ? 200 : 400;  
-     } else {
-	  Group_t g = sender->u.val;
-	  ScreenName_t sname = (g->u.typ == Imps_ScreenName) ? g->u.val : NULL;
-	  GroupID_t gid = (sname) ? sname->gid : g->u.val;
-	  PGresult *r;
-	  int ret;
-	  
-	  if (sname == NULL || sname->sname == NULL || gid == NULL)
-	       return 429;
-	  
-	  /* Now check that the user is in the group, with the given screen name. */
-	  extract_id_and_domain((void *)gid->str, xid, xdomain);
-	  
-	  PQ_ESCAPE_STR_LOWER(c, xid, tmp1);
-	  PQ_ESCAPE_STR_LOWER(c, xdomain, tmp2);
-	  PQ_ESCAPE_STR_LOWER(c, (char *)sname->sname->str, tmp3);	  
-	 
-	  if (get_islocal_domain(c, tmp2) == 0)  /* we can't check it. */
-	       return 201; 
-	  
-	  sprintf(buf, "SELECT id FROM group_members_view WHERE groupid='%.128s' AND "
-		  "domain = '%.128s' AND local_userid = %lld AND screen_name = '%.128s' and isjoined = true",
-		  tmp1, tmp2, uid, tmp3);
-
-	  r = PQexec(c, buf);
-
-	  ret = (PQresultStatus(r) == PGRES_TUPLES_OK && PQntuples(r) > 0) ? 200 : 808;
-	  PQclear(r);
-	  return ret;
-     }
-     return 402;
-}
-#endif
 
 SendMessage_Response_t handle_send_im(RequestInfo_t *ri, SendMessage_Request_t req)
 {
@@ -205,11 +152,12 @@ SendMessage_Response_t handle_send_im(RequestInfo_t *ri, SendMessage_Request_t r
 Status_t handle_setd_method(RequestInfo_t *ri, SetDeliveryMethod_Request_t req)
 {
      
-     char cmd[512], tmp1[DEFAULT_BUF_LEN];
+     char cmd[512];
      PGconn *c = ri->c;
      Result_t rs;
      PGresult *r;
      char dmethod[32];
+     const char *pvals[5];
      
      int64_t sid = ri->sessid;
 
@@ -218,20 +166,19 @@ Status_t handle_setd_method(RequestInfo_t *ri, SetDeliveryMethod_Request_t req)
 	  sprintf(dmethod, ",deliver_method='%.1s' ", req->dmethod->str);
      else 
 	  dmethod[0] = 0;
+
+     pvals[0] = ri->_sessid;
      if (csp_msg_field_isset(req, gid)) { /* refers to a group. */
-	  char *gname = req->gid ? (char *)req->gid->str : "";
 
 	  /* XXX We ignore group check since it makes no difference. Right?? */
-	  PQ_ESCAPE_STR_LOWER(c, gname, tmp1);
 	  
-	  sprintf(cmd, "DELETE FROM group_session_limits WHERE sessid = %lld AND groupid = '%.128s'", 
-		  sid, tmp1);
-	  r = PQexec(c, cmd);
+	  pvals[1] = req->gid ? (char *)req->gid->str : "";
+	  r = PQexecParams(c, "DELETE FROM group_session_limits WHERE sessid = $1 AND groupid = $2", 
+			   2, NULL, pvals, NULL, NULL, 0);
 	  PQclear(r);
 	
-	  sprintf(cmd, "INSERT into group_session_limits (sessid, groupid) VALUES (%lld, '%.128s') RETURNING id", 
-		  sid, tmp1);
-	  r = PQexec(c, cmd);
+	  r = PQexecParams(c, "INSERT into group_session_limits (sessid, groupid) VALUES ($1, $2) RETURNING id", 
+			   2, NULL, pvals, NULL, NULL, 0);			   
 	  if (PQresultStatus(r) != PGRES_TUPLES_OK || PQntuples(r) < 1)
 	       warning(0, "error setting group delivery method: %s", PQerrorMessage(c));
 	  else {
@@ -469,27 +416,29 @@ static int send_dlr_for_msg(PGconn *c, int64_t msgid, int64_t orig_to, int code,
  */
 static int delete_pending_msg(PGconn *c, int64_t rcpt_to, char *msgid, int reason_code, char *reason)
 {
-     char cmd[512], tmp1[DEFAULT_BUF_LEN];
+     char  tmp[64];
      PGresult *r;
      int code;
-     char mstatus;
-
-     if (reason_code == 200)
-	  mstatus = 'F';
-     else if (reason_code == 538)
-	  mstatus = 'R';
-     else 
-	  mstatus = 'S'; /* forwarded. */
+     char *mstatus;
+     const char *pvals[5];
      
-     PQ_ESCAPE_STR(c, msgid, tmp1);
-     sprintf(cmd, "UPDATE csp_message_recipients SET msg_status = '%c'  WHERE userid=%lld AND "
-	     "messageid = (SELECT id FROM csp_message_queue WHERE msgid = '%.128s' LIMIT 1) RETURNING "
-	     " messageid, id",
-	     mstatus,
-	     rcpt_to, tmp1); /* first mark it. */
-
-     r = PQexec(c, cmd);
-
+     if (reason_code == 200)
+	  mstatus = "F";
+     else if (reason_code == 538)
+	  mstatus = "R";
+     else 
+	  mstatus = "S"; /* forwarded. */
+     
+     pvals[0] = msgid; 
+     pvals[1] = mstatus;
+     pvals[2] = tmp;
+     
+     sprintf(tmp, "%lld", rcpt_to);
+     
+     r  = PQexecParams(c, "UPDATE csp_message_recipients SET msg_status = $2  WHERE userid=$3 AND "
+		       "messageid = (SELECT id FROM csp_message_queue WHERE msgid = $1 LIMIT 1) RETURNING "
+		       " messageid, id",
+		       3, NULL, pvals, NULL, NULL, 0); /* first mark it. */
      if (PQresultStatus(r) != PGRES_TUPLES_OK) {
 	  error(0, "error deleting message: %s", PQerrorMessage(c));
 	  code = 500;
@@ -497,22 +446,31 @@ static int delete_pending_msg(PGconn *c, int64_t rcpt_to, char *msgid, int reaso
 	  code = 426;
      else {
 	  PGresult *r2;
-	  int64_t xmsgid = strtoull(PQgetvalue(r, 0, 0), NULL, 10);
-	  int64_t rid = strtoull(PQgetvalue(r, 0, 1), NULL, 10);
+	  char *xms, *xrid;
+	  int64_t xmsgid;
+	  int64_t rid;
+	  
+	  xms = PQgetvalue(r, 0, 0);
+	  xrid = PQgetvalue(r, 0, 1);
+	  
+	  xmsgid = strtoull(xms, NULL, 10);
+	  rid  = strtoull(xrid, NULL, 10);
 
 	  send_dlr_for_msg(c, xmsgid, rcpt_to, reason_code, reason); 
 	  
 	  code = 200;
 	  /* finally delete it */
-	  sprintf(cmd, "DELETE from csp_message_recipients WHERE id = %lld" , rid);
-	  r2 = PQexec(c, cmd);
+	  pvals[0] = xrid;
+	  
+	  r2 = PQexecParams(c, "DELETE from csp_message_recipients WHERE id = $1" ,
+			    1, NULL, pvals, NULL, NULL, 0);
 	  PQclear(r2);
 	  
 	  /* XXX try to delete ones that are already sent... */
-	  sprintf(cmd, "DELETE FROM csp_message_queue WHERE id = %lld AND NOT "
-		  " EXISTS (SELECT id FROM csp_message_recipients WHERE messageid=%lld)",
-		  xmsgid, xmsgid);
-	  r2 = PQexec(c, cmd);
+	  pvals[0] = xms;
+	  r2 = PQexecParams(c, "DELETE FROM csp_message_queue WHERE id = $1 AND NOT "
+			    " EXISTS (SELECT id FROM csp_message_recipients WHERE messageid=$1)",
+			    1, NULL, pvals, NULL, NULL, 0);
 	  PQclear(r2);
      }
      
@@ -581,22 +539,20 @@ GetMessage_Response_t handle_get_msg(RequestInfo_t *ri, GetMessage_Request_t req
 {
      PGconn *c = ri->c;
      PGresult *r;
-     char cmd[512], tmp1[DEFAULT_BUF_LEN];
-     int64_t uid = ri->uid;     
+     
      GetMessage_Response_t resp;
      int type;
      char *msgid, *u, *clid, *sname;
      Octstr *data = NULL;
      NewMessage_t msg = NULL;
+     const char *pvals[5];
      
-     
-     msgid = req->msgid ? (char *)req->msgid->str : "";
-     PQ_ESCAPE_STR(c, msgid, tmp1);
-     sprintf(cmd, "SELECT msg_data, msg_type,full_userid,screen_name,clientid "
-	     " FROM csp_message_recipients_view WHERE msgid = '%.128s' AND userid = %lld", 
-	     tmp1, uid);
-     
-     r = PQexec(c, cmd);
+     pvals[0] = msgid = req->msgid ? (char *)req->msgid->str : "";
+     pvals[1] = ri->_uid;
+          
+     r = PQexecParams(c, "SELECT msg_data, msg_type,full_userid,screen_name,clientid "
+		      " FROM csp_message_recipients_view WHERE msgid = $1 AND userid = $2", 
+		      2, NULL, pvals, NULL, NULL, 0);     
      if (PQresultStatus(r) != PGRES_TUPLES_OK) {	  
 	  void *rs = csp_msg_new(Result, NULL, 
 				 FV(code,500), 
@@ -658,19 +614,19 @@ Status_t handle_msg_delivered(RequestInfo_t *ri, MessageDelivered_t req)
 {
      PGconn *c = ri->c;
      PGresult *r;
-     char cmd[512], tmp1[DEFAULT_BUF_LEN];
      int64_t uid = ri->uid;     
      
      Result_t rs;
      char *msgid;
+     const char *pvals[5];
      
-     msgid = req->msgid ? (char *)req->msgid->str : "";
-     PQ_ESCAPE_STR(c, msgid, tmp1);
-     sprintf(cmd, "SELECT id "
-	     " FROM csp_message_recipients_view WHERE msgid = '%.128s' AND userid = %lld", 
-	     tmp1, uid);
      
-     r = PQexec(c, cmd);
+     pvals[0] = msgid = req->msgid ? (char *)req->msgid->str : "";
+     pvals[1] = ri->_uid;
+     r = PQexecParams(c, "SELECT id "
+		      " FROM csp_message_recipients_view WHERE msgid = $1 AND userid = $2", 
+		      2, NULL, pvals, NULL, NULL, 0);
+     
      if (PQresultStatus(r) != PGRES_TUPLES_OK) {	  
 	  rs = csp_msg_new(Result, NULL, 
 				 FV(code,500), 
@@ -704,7 +660,6 @@ Status_t handle_fwd_msg(RequestInfo_t *ri, ForwardMessage_Request_t req)
 
      PGconn *c = ri->c;
      PGresult *r;
-     char cmd[512], tmp1[DEFAULT_BUF_LEN];
      int64_t uid = ri->uid;     
      Status_t resp;
      int type, code;
@@ -713,15 +668,15 @@ Status_t handle_fwd_msg(RequestInfo_t *ri, ForwardMessage_Request_t req)
      NewMessage_t msg = NULL;
      SendMessage_Request_t sm = NULL;
      SendMessage_Response_t smr = NULL;
+     const char *pvals[4];
      
+     pvals[0] = msgid = req->msgid ? (char *)req->msgid->str : "";
+     pvals[1] = ri->_uid;
+          
+     r = PQexecParams(c, "SELECT msg_data, msg_type "
+		      " FROM csp_message_recipients_view WHERE msgid = $1 AND userid = $2", 
+		      2, NULL, pvals, NULL, NULL, 0);
      
-     msgid = req->msgid ? (char *)req->msgid->str : "";
-     PQ_ESCAPE_STR(c, msgid, tmp1);
-     sprintf(cmd, "SELECT msg_data, msg_type "
-	     " FROM csp_message_recipients_view WHERE msgid = '%.128s' AND userid = %lld", 
-	     tmp1, uid);
-     
-     r = PQexec(c, cmd);
      if (PQresultStatus(r) != PGRES_TUPLES_OK) {	  
 	  void *rs = csp_msg_new(Result, NULL, 
 				 FV(code,500), 
@@ -820,25 +775,30 @@ static void modify_access_list(PGconn *c, int64_t uid, const char *field1, char 
 			       int allow,
 			       int add)
 {
-     char cmd[512], tmp1[DEFAULT_BUF_LEN], tmp2[DEFAULT_BUF_LEN];
+     char cmd[512];
      PGresult *r;
-     
-     PQ_ESCAPE_STR_LOWER(c, value1, tmp1);
-     PQ_ESCAPE_STR_LOWER(c, value2, tmp2);
-     
-     if (add)
-	  sprintf(cmd, "DELETE FROM access_lists WHERE owner=%lld AND %s='%.128s' AND %s='%.128s' and allow=%s; "
-		  "INSERT INTO access_lists (owner, allow, %s, %s) VALUES "
-		  "(%lld, %s, '%.128s', '%.128s') ",
-		  uid, field1, tmp1, field2,tmp2, allow ? "true" : "false", 
-		  field1, field2, uid, allow ? "true" : "false", tmp1, tmp2);
-     else 
-	  sprintf(cmd, "DELETE FROM access_lists WHERE owner=%lld AND %s = '%.128s' AND "
-		  " %s = '%.128s' AND "
+     const char *pvals[10];
+
+     pvals[0] = value1;
+     pvals[2] = value2;
+          
+     if (add) {
+	  sprintf(cmd, "DELETE FROM access_lists WHERE owner=%lld AND %s=$1 AND %s=$2 and allow=%s; ",
+		  uid, field1, field2, allow ? "true" : "false");
+	  r = PQexecParams(c, cmd, 2, NULL, pvals, NULL, NULL, 0);
+	  PQclear(r);
+	  
+	  sprintf(cmd, "INSERT INTO access_lists (owner, allow, %s, %s) VALUES "
+		  "(%lld, %s, $1, $2) ",
+		  field1, field2, uid, allow ? "true" : "false");
+     } else 
+	  sprintf(cmd, "DELETE FROM access_lists WHERE owner=%lld AND %s = $1 AND "
+		  " %s = $2 AND "
 		  "allow = %s",
-		  uid, field1, tmp1, field2, tmp2,
+		  uid, field1,  field2,
 		  allow ? "true" : "false");
-     r = PQexec(c, cmd);
+
+     r = PQexecParams(c, cmd, 2, NULL, pvals, NULL, NULL, 0);
      
      PQclear(r);          
 }
@@ -847,7 +807,6 @@ static void modify_access_list(PGconn *c, int64_t uid, const char *field1, char 
 static void modify_screen_name_acls(PGconn *c, int64_t uid, List *snames, int allow, int add, List *el)
 {
      char xid[DEFAULT_BUF_LEN], xdomain[DEFAULT_BUF_LEN];
-     char tmp1[DEFAULT_BUF_LEN], tmp2[DEFAULT_BUF_LEN];
      ScreenName_t s;
      int i;
 
@@ -859,10 +818,8 @@ static void modify_screen_name_acls(PGconn *c, int64_t uid, List *snames, int al
 	       int islocal;
 	       
 	       extract_id_and_domain(gid, xid, xdomain);	       
-	       PQ_ESCAPE_STR_LOWER(c, xid, tmp1);
-	       PQ_ESCAPE_STR_LOWER(c, xdomain, tmp2);
 
-	       xgid = get_groupid(c, tmp1, tmp2, &islocal);
+	       xgid = get_groupid(c, xid, xdomain, &islocal);
 	       if (xgid < 0 && islocal) {
 		    Octstr *err = octstr_format("invalid group: %.128s", gid);
 		    DetailedResult_t dr = csp_msg_new(DetailedResult, NULL,
@@ -884,7 +841,6 @@ static void modify_screen_name_acls(PGconn *c, int64_t uid, List *snames, int al
 static void modify_group_acls(PGconn *c, int64_t uid, List *grps, int allow, int add, List *el)
 {
      char xid[DEFAULT_BUF_LEN], xdomain[DEFAULT_BUF_LEN];
-     char tmp1[DEFAULT_BUF_LEN], tmp2[DEFAULT_BUF_LEN];
      GroupID_t gid;
      int i;
      
@@ -894,10 +850,7 @@ static void modify_group_acls(PGconn *c, int64_t uid, List *grps, int allow, int
 	       int islocal;
 	       
 	       extract_id_and_domain((char *)gid->str, xid, xdomain);	       
-	       PQ_ESCAPE_STR_LOWER(c, xid, tmp1);
-	       PQ_ESCAPE_STR_LOWER(c, xdomain, tmp2);
-
-	       xgid = get_groupid(c, tmp1, tmp2, &islocal);
+	       xgid = get_groupid(c, xid, xdomain, &islocal);
 	       if (xgid < 0 && islocal) {
 		    Octstr *err = octstr_format("invalid group: %.128s", (char *)gid->str);
 		    DetailedResult_t dr = csp_msg_new(DetailedResult, NULL,
@@ -917,7 +870,6 @@ static void modify_group_acls(PGconn *c, int64_t uid, List *grps, int allow, int
 static void modify_userid_acls(PGconn *c, int64_t uid, List *userids, int allow, int add, List *el)
 {
      char xid[DEFAULT_BUF_LEN], xdomain[DEFAULT_BUF_LEN], buf[64];
-     char tmp1[DEFAULT_BUF_LEN], tmp2[DEFAULT_BUF_LEN];
      UserID_t u;
      int i;
      char *field;
@@ -932,11 +884,7 @@ static void modify_userid_acls(PGconn *c, int64_t uid, List *userids, int allow,
 	       
 	       extract_id_and_domain(user, xid, xdomain);
 
-	       PQ_ESCAPE_STR_LOWER(c, xid, tmp1);
-	       PQ_ESCAPE_STR_LOWER(c, xdomain, tmp2);
-	       
-	       xuid = get_userid(c, tmp1, tmp2, &islocal);
-	       
+	       xuid = get_userid(c, xid, xdomain, &islocal);	       
 	       if (xuid < 0 && islocal) {
 		    Octstr *err = octstr_format("invalid userid: %.128s", user);
 		    DetailedResult_t dr = csp_msg_new(DetailedResult, NULL,
@@ -976,19 +924,15 @@ static void modify_single_clist_acls(PGconn *c, int64_t uid, char *clist, int al
 {
      
      char xid[DEFAULT_BUF_LEN], xdomain[DEFAULT_BUF_LEN], buf[512];
-     char tmp1[DEFAULT_BUF_LEN], tmp2[DEFAULT_BUF_LEN];
      int64_t cid;
      int islocal, i, n;
      PGresult *r;
 
      extract_id_and_domain(clist, xid, xdomain);
-     
-     PQ_ESCAPE_STR_LOWER(c, xid, tmp1);
-     PQ_ESCAPE_STR_LOWER(c, xdomain, tmp2);
-     
+          
      /* not too efficient */
      sprintf(buf, "userid=%lld", uid);
-     cid = get_contactlist(c, tmp1, tmp2, buf, &islocal);
+     cid = get_contactlist(c, xid, xdomain, buf, &islocal);
 
      if (cid < 0) {
 	  Octstr *err = octstr_format("invalid contactlist: %.128s", clist);

@@ -32,4 +32,5 @@ typedef struct SrvRecord_t {
 SrvRecord_t dns_find_srv(char *domain, char *service, int *count);
 
 SrvRecord_t dns_make_srv_rec_from_domain(char *domain, int port);
+
 #endif

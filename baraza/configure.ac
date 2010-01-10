@@ -147,95 +147,95 @@ if test "x$resolvlib" = "x"; then
 fi
 
 dnl implement SSL stuff.
-
+dnl now inherited from kannel libs
 dnl Implement the --with-ssl option.
 
 
-AC_ARG_WITH(ssl,
-[  --with-ssl[=DIR]          where to look for OpenSSL libs and header files
-                          DIR points to the installation [/usr/local/ssl]],
-[ if test -d "$withval"; then
-    ssllib="$withval/lib";
-    sslinc="$withval/include"
-  else
-    AC_MSG_ERROR(Unable to find OpenSSL libs and/or directories at $withval)
-  fi
-])
+dnl AC_ARG_WITH(ssl,
+dnl [  --with-ssl[=DIR]          where to look for OpenSSL libs and header files
+dnl                           DIR points to the installation [/usr/local/ssl]],
+dnl [ if test -d "$withval"; then
+dnl     ssllib="$withval/lib";
+dnl     sslinc="$withval/include"
+dnl   else
+dnl     AC_MSG_ERROR(Unable to find OpenSSL libs and/or directories at $withval)
+dnl   fi
+dnl ])
 
 dnl Implement --enable-ssl option. SET to yes
-ssl=yes
+dnl ssl=yes
 
-if test "$ssl" = "yes" ; then
-  if test "x$ssllib" = "x" && test "x$sslinc" = "x"; then
-    for loc in /usr/lib /usr/local/ssl/lib /usr/local/openssl/lib; do
-      if test -f "$loc/libssl.$LIB_EXT"; then
-        ssllib="$loc"
-      fi
-    done
-    for loc in /usr/include/ssl /usr/include/openssl /usr/local/ssl/include \
-               /usr/local/openssl/include; do
-      if test -d "$loc"; then
-        sslinc="$loc"
-      fi
-    done
-  fi
-  AC_MSG_RESULT(trying $ssllib $sslinc)
-fi
+dnl if test "$ssl" = "yes" ; then
+dnl  if test "x$ssllib" = "x" && test "x$sslinc" = "x"; then
+dnl    for loc in /usr/lib /usr/local/ssl/lib /usr/local/openssl/lib; do
+dnl      if test -f "$loc/libssl.$LIB_EXT"; then
+dnl        ssllib="$loc"
+dnl      fi
+dnl    done
+dnl    for loc in /usr/include/ssl /usr/include/openssl /usr/local/ssl/include \
+dnl               /usr/local/openssl/include; do
+dnl      if test -d "$loc"; then
+dnl        sslinc="$loc"
+dnl      fi
+dnl    done
+dnl  fi
+dnl  AC_MSG_RESULT(trying $ssllib $sslinc)
+dnl fi
 
 dnl Implement the SSL library checking routine.
 dnl This will define HAVE_LIBSSL in config.h
 
-if test "x$ssllib" != "x" && test "x$sslinc" != "x"; then
-  CFLAGS="$CFLAGS -I$sslinc"
-  LIBS="$LIBS -L$ssllib"
+dnl if test "x$ssllib" != "x" && test "x$sslinc" != "x"; then
+dnl  CFLAGS="$CFLAGS -I$sslinc"
+dnl  LIBS="$LIBS -L$ssllib"
 
-  AC_PATH_PROG(OPENSSL, openssl, no)
-  if test "$OPENSSL" = "yes"; then
-    AC_MSG_CHECKING([openssl version])
-    openssl_version=`$OPENSSL version | awk '{print $2}'`
-    AC_MSG_RESULT([$openssl_version])
-  fi
-  AC_CHECK_LIB(crypto, CRYPTO_lock,
-  [ LIBS="$LIBS -lcrypto"
-    AC_CHECK_LIB(ssl, SSL_library_init,
-    [ AC_CHECK_LIB(ssl, SSL_connect)
-      AC_CHECK_HEADERS(openssl/x509.h openssl/rsa.h openssl/crypto.h \
-                       openssl/pem.h openssl/ssl.h openssl/err.h)
-      AC_MSG_CHECKING(whether the OpenSSL library is multithread-enabled)
-      AC_TRY_RUN([
-        #define OPENSSL_THREAD_DEFINES
-        #include <openssl/opensslconf.h>
-        int main(void) {
-        #if defined(THREADS)
-          exit(0);
-        #elif defined(OPENSSL_THREADS)
-          exit(0);
-        #else
-          exit(1);
-        #endif
-        }
-      ], [
-        AC_MSG_RESULT(yes)
-        AC_DEFINE(HAVE_LIBSSL)
-        LIBS="$LIBS -lssl"
-        AC_MSG_CHECKING([whether to compile with SSL support])
-        AC_MSG_RESULT(yes)
-      ], [
-        AC_ARG_ENABLE(ssl-thread-test,
-        [  --disable-ssl-thread-test  disable the multithread test for the OpenSSL library
-                          this will force to continue even if the test fails],
-        [ if test "$enableval" = no ; then
-            AC_MSG_RESULT([no, continue forced])
-          fi
-        ], [
-          AC_MSG_RESULT(no)
-          AC_MSG_ERROR(Either get a multithread-enabled SSL or configure with --disable-ssl)
-        ])
-      ], echo "Cross-compiling; make sure your SSL library is multithread-enabled"
-      )
-    ])
-  ])
-fi
+dnl  AC_PATH_PROG(OPENSSL, openssl, no)
+dnl  if test "$OPENSSL" = "yes"; then
+dnl    AC_MSG_CHECKING([openssl version])
+dnl    openssl_version=`$OPENSSL version | awk '{print $2}'`
+dnl    AC_MSG_RESULT([$openssl_version])
+dnl  fi
+dnl  AC_CHECK_LIB(crypto, CRYPTO_lock,
+dnl  [ LIBS="$LIBS -lcrypto"
+dnl    AC_CHECK_LIB(ssl, SSL_library_init,
+dnl    [ AC_CHECK_LIB(ssl, SSL_connect)
+dnl      AC_CHECK_HEADERS(openssl/x509.h openssl/rsa.h openssl/crypto.h \
+dnl                       openssl/pem.h openssl/ssl.h openssl/err.h)
+dnl      AC_MSG_CHECKING(whether the OpenSSL library is multithread-enabled)
+dnl      AC_TRY_RUN([
+dnl        #define OPENSSL_THREAD_DEFINES
+dnl        #include <openssl/opensslconf.h>
+dnl        int main(void) {
+dnl        #if defined(THREADS)
+dnl          exit(0);
+dnl        #elif defined(OPENSSL_THREADS)
+dnl          exit(0);
+dnl        #else
+dnl          exit(1);
+dnl        #endif
+dnl        }
+dnl      ], [
+dnl        AC_MSG_RESULT(yes)
+dnl        AC_DEFINE(HAVE_LIBSSL)
+dnl        LIBS="$LIBS -lssl"
+dnl        AC_MSG_CHECKING([whether to compile with SSL support])
+dnl        AC_MSG_RESULT(yes)
+dnl      ], [
+dnl        AC_ARG_ENABLE(ssl-thread-test,
+dnl        [  --disable-ssl-thread-test  disable the multithread test for the OpenSSL library
+dnl                          this will force to continue even if the test fails],
+dnl        [ if test "$enableval" = no ; then
+dnl            AC_MSG_RESULT([no, continue forced])
+dnl          fi
+dnl        ], [
+dnl          AC_MSG_RESULT(no)
+dnl          AC_MSG_ERROR(Either get a multithread-enabled SSL or configure with --disable-ssl)
+dnl        ])
+dnl      ], echo "Cross-compiling; make sure your SSL library is multithread-enabled"
+dnl      )
+dnl    ])
+dnl  ])
+dnl fi
 
 dnl Need to check for kannel and also that kannel has been patched.
 

@@ -75,7 +75,9 @@
 typedef struct RequestInfo_t {
      int64_t uid;    /* the user who's session it is. (CSP only.) */
      int64_t sessid; /* the sessid ID in the DB. (CSP only) */
-     char    xsessid[128];  /* the original text session ID as given. */     
+     char    _sessid[64];  /* Printed version, for use in queries */
+     char    _uid[64];        /* Printed version, for use in queries */ 
+     char    xsessid[128];  /* the original text session ID as given in the request. */     
 
      Octstr  *req_ip; /* IP address from which request received. */
      Octstr  *client_ip;  /* client request IP */
@@ -185,25 +187,6 @@ int get_object_name_and_domain(PGconn *c, enum DBObjectTypes_t type, int64_t id,
 /* Returns true if this user is a Bot. */
 int is_bot(PGconn *c, u_int64_t uid, char url[], char name[]);
 
-#define PQ_ESCAPE_STR(c,_str,_buf) do {char *_s = (_str); int _n = strlen(_s); PQescapeString((_buf),(_s),_n<sizeof _buf ? _n : sizeof _buf); } while (0)
-
-#define PQ_ESCAPE_BSTR(c,_str,len,_buf) do {char *_s = (_str); int _n = (len); PQescapeString((_buf),(_s),_n<sizeof _buf ? _n : sizeof _buf); } while (0)
-
-
-/* Same as above, but also lower case the string. */
-
-#define PQ_ESCAPE_STR_LOWER(c,_str,_buf) do {				\
-    char *_xs = (_str), *_xp = _xs;					\
-    while (*_xp) {*_xp = tolower(*_xp); _xp++;}				\
-    PQ_ESCAPE_STR((c), _xs, (_buf));					\
-  } while (0)
-
-#define PQ_ESCAPE_BSTR_LOWER(c,_str,len,_buf) do {			\
-    char *_xs = (_str), *_xp = _xs;					\
-    int _n = (len);							\
-    while ((_xp - _xs) < _n && *_xp) {*_xp = tolower(*_xp); _xp++;}	\
-    PQ_ESCAPE_BSTR((c), _xs, _n, (_buf));				\
-  } while (0)
 
 /* makes a temporary table for storing (u_int64_t) IDs. Has only one field called 'id'
  * table gets dropped at end of transaction

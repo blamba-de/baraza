@@ -46,18 +46,22 @@ static Octstr *make_sess(PGconn *c, char *oldsess, char *user, char *domain,
 {
      PGresult *r;
      u_int64_t uid = 0;
-     char cmd[512], tmp1[128], tmp2[128], msisdn[64], tmp3[128];
+     char tmp1[128], msisdn[64], _uid[128];
      Octstr *clid = NULL, *sess = NULL;
+     const char *pvals[20] = {user, domain};
+     
      /* Get the uid. */
-
-     sprintf(cmd, "SELECT id,phone FROM users WHERE userid='%.128s' AND domain = '%.128s'", user, domain);
-     r = PQexec(c, cmd);
+     
+     r = PQexecParams(c,
+		      "SELECT id,phone FROM users WHERE userid=$1 AND domain = $2",
+		      2, NULL, pvals, NULL, NULL, 0);
      
      if (PQresultStatus(r) != PGRES_TUPLES_OK || PQntuples(r) < 1) {
 	  error(0, "user [%s at %s] disappeared ??", user, domain);
 	  msisdn[0] = 0;
      } else {
-	  uid = strtoull(PQgetvalue(r, 0, 0), NULL, 10);
+	  strncpy(_uid, PQgetvalue(r, 0, 0), sizeof _uid);
+	  uid = strtoull(_uid, NULL, 10);
 	  strncpy(msisdn, PQgetvalue(r, 0, 1), sizeof msisdn);
      }
      PQclear(r);
@@ -67,12 +71,15 @@ static Octstr *make_sess(PGconn *c, char *oldsess, char *user, char *domain,
      /* First make a clientID of sorts. */
      clid = make_clientid(clnt, appid);
 
-     PQ_ESCAPE_STR(c, octstr_get_cstr(clid), tmp1);
+     pvals[0] = _uid;
+     pvals[1] = octstr_get_cstr(clid);
+     
+
      if (oldsess) { /* then check that it exists and that client id matches. */
-	  PQ_ESCAPE_STR(c, oldsess,tmp2);
-	  sprintf(cmd, "SELECT id FROM sessions WHERE sessionid = '%.128s' AND userid = %lld AND clientid = '%.128s';",
-		  tmp2, uid, tmp1);
-	  r = PQexec(c, cmd);
+
+	  pvals[2] = oldsess;	  
+	  r = PQexecParams(c, "SELECT id FROM sessions WHERE sessionid = $2 AND userid = $1 AND clientid = $2",
+			   3, NULL, pvals, NULL, NULL, 0);
 	  
 	  if (PQresultStatus(r) != PGRES_TUPLES_OK || 
 	      PQntuples(r) < 1) {
@@ -82,27 +89,22 @@ static Octstr *make_sess(PGconn *c, char *oldsess, char *user, char *domain,
 	       sess = octstr_create(oldsess);
 	  PQclear(r);
      } else {
-	  PQ_ESCAPE_STR(c, cookie, tmp2);
-	  PQ_ESCAPE_STR(c, orig_msisdn ? orig_msisdn : msisdn, tmp3);
-	  sprintf(cmd, "INSERT INTO sessions (userid, clientid, cookie,msisdn,csp_version) VALUES "
-		  " (%lld, '%.128s', '%.128s', '%.128s', '%d.%d') RETURNING id", uid,tmp1, tmp2,
-		  msisdn[0] ? tmp3 : "",
-		  CSP_MAJOR_VERSION(csp_version), CSP_MINOR_VERSION(csp_version));
-	  r = PQexec(c, cmd);
+	  pvals[2] = cookie;
+	  pvals[3] = orig_msisdn ? orig_msisdn : msisdn;
+	  
+	  sprintf(tmp1, "%d.%d", CSP_MAJOR_VERSION(csp_version), CSP_MINOR_VERSION(csp_version));
+	  pvals[4] = tmp1;
+
+	  r = PQexecParams(c, "INSERT INTO sessions (userid, clientid, cookie,msisdn,csp_version) VALUES "
+			   " ($1, $2, $3, $4, $5) RETURNING id, sessionid",
+			   5, NULL, pvals, NULL, NULL, 0);
 
 	  if (PQresultStatus(r) == PGRES_TUPLES_OK && PQntuples(r) > 0) {
 	       u_int64_t sid = strtoull(PQgetvalue(r, 0,0), NULL, 10);
+	       char *s = PQgetvalue(r, 0, 1);
 	       
 	       *xsid = sid;
-	       PQclear(r);
-	       sprintf(cmd, "UPDATE sessions SET sessionid =  upper(md5(current_timestamp::text)) || '%lldG' "
-		       "WHERE id = %lld RETURNING sessionid",
-		       sid, sid);
-	       r = PQexec(c, cmd);
-	       if (PQresultStatus(r) == PGRES_TUPLES_OK && PQntuples(r) > 0) {
-		    char *s = PQgetvalue(r, 0, 0);
-		    sess = octstr_create(s);
-	       }
+	       sess = octstr_create(s);	      
 	  }
 
 	  PQclear(r);
@@ -140,7 +142,7 @@ Login_Response_t handle_login(RequestInfo_t *ri, Login_Request_t req)
      char xuser[DEFAULT_BUF_LEN] = {0}, xdomain[DEFAULT_BUF_LEN] = {0};
      char *pass = req->pwd ? (char *)req->pwd->str : NULL;
      char *digest = req->digest ? (char *)req->digest->str : NULL;
-     char tmp1[128], tmp2[256],cmd[512];
+     const char *cmd = NULL;
      List *schemas = req->dschema;
      DigestSchema_t rschema = NULL;
      Functions_t fns = NULL;
@@ -155,6 +157,7 @@ Login_Response_t handle_login(RequestInfo_t *ri, Login_Request_t req)
      SessionID_t *newsess = NULL;
      AgreedCapabilityList_t caplist = NULL;
      int has_user, auto_regd = 0;
+     const char *pvals[10];
      
      if (user == NULL || user[0] == 0) {
 	  error(0, "missing userid n login request");
@@ -166,49 +169,57 @@ Login_Response_t handle_login(RequestInfo_t *ri, Login_Request_t req)
      extract_id_and_domain(user, xuser, xdomain);
      if (xdomain[0] == 0) /* default to current domain. */
 	  strncpy(xdomain, ri->conf->mydomain, sizeof xdomain);
-     
-     PQ_ESCAPE_STR_LOWER(c, xuser, tmp1);
-     PQ_ESCAPE_STR_LOWER(c, xdomain, tmp2);
+          
+     pvals[0] = xuser;
+     pvals[1] = xdomain;
      
      if (pass || digest) { /* we have a password or digest proceed. */
 	  int islocal = 0; 
-	  char xpass[128] = {0};
-	  char *type = pass ? "plain" : "md5";
+	  Octstr *xdigest = NULL; 
+	  int use_md5 = pass ? 0 : 1;
+	  int nargs = 3;
+
 	  
 	  if (pass) 
-	       PQ_ESCAPE_STR(c, pass, xpass);
+	       pvals[2] = pass;
 	  else { /* digest more complicated. */
-	       Octstr *s = octstr_create(digest);
-	       octstr_base64_to_binary(s);
-	       octstr_binary_to_hex(s, 0);
-	       /* Hex does not need to be escaped. */
-	       strncpy(xpass, octstr_get_cstr(s), sizeof xpass);
-	       octstr_destroy(s);
+	       xdigest = octstr_create(digest);
+	       octstr_base64_to_binary(xdigest);
+	       octstr_binary_to_hex(xdigest, 0);
+
+	       pvals[2] = octstr_get_cstr(xdigest);
 	  }
+
 	  code = 531; /* defaults to go-away! */
 	  err = "no such user";
-	  if (get_userid(c, tmp1, tmp2, &islocal) < 0 && islocal && 
+
+	  if (get_userid(c, xuser, xdomain, &islocal) < 0 && islocal && 
 	      ri->conf->auto_reg && check_user(xuser, sizeof xuser)) { /* handle autoregistration. */	       
+	       Octstr *xnonce = NULL;
 	       if (pass)
-		    sprintf(cmd, "SELECT new_user('%s', '%s', '%.128s',true)", 
-			    tmp1, xpass,  tmp2);
+		    cmd ="SELECT new_user($1, $3, $2,true)";
 	       else {
-		    Octstr *xnonce = make_nonce(ri->conf->nonce_salt,
-						req->cookie ? csp_String_to_cstr(req->cookie) : "x", user);	       
+		    xnonce = make_nonce(ri->conf->nonce_salt,
+					req->cookie ? csp_String_to_cstr(req->cookie) : "x", user);	       
+		   
+		    pvals[3] = octstr_get_cstr(xnonce); 
+
+		    nargs++;
 		    
-		    sprintf(cmd, "SELECT new_user_md5('%s', '%s', '%.128s', '%.128s',true)", 
-			    tmp1, tmp2, octstr_get_cstr(xnonce), xpass);			 
-		    octstr_destroy(xnonce);
-	       }
-	       r = PQexec(c, cmd);
+		    cmd =  "SELECT new_user_md5($1, $2, $4, $3,true)";			 
+	       }	       
+	       r = PQexecParams(c, cmd, 
+				nargs,  NULL, pvals, NULL, NULL, 0);
 	       code = (PQresultStatus(r) == PGRES_TUPLES_OK) ? 200 : 500; 
 	       err = (code == 200) ? "Success" : "Auto-registration failed!";
-	       PQclear(r);	  
 	       auto_regd = (code == 200); /* flag that we've auto registered */
+
+	       PQclear(r);	  
+	       octstr_destroy(xnonce);
 	  }  else if (islocal) { /* the user is local, and is trying to authenticate. */
-	       sprintf(cmd, "SELECT verify_%s_pass('%s', '%s', '%.128s')", type, tmp1, tmp2, xpass);
-	       r = PQexec(c, cmd);	 
-	       
+	       cmd = use_md5 ? "SELECT verify_md5_pass($1, $2, $3)" : "SELECT verify_plain_pass($1, $2, $3)";
+	       	       
+	       r = PQexecParams(c, cmd, 3, NULL, pvals, NULL, NULL, 0);	 	       
 	       if (PQresultStatus(r) == PGRES_TUPLES_OK && PQntuples(r)  > 0) { /* we got a result. */
 		    char *s = PQgetvalue(r, 0, 0);
 		    code = _str2bool(s) ? 200 : 409;
@@ -218,11 +229,12 @@ Login_Response_t handle_login(RequestInfo_t *ri, Login_Request_t req)
 	  }  else if (!islocal)
 	       err = "Domain not supported here";
 	  log_success =  (code == 200);	  
+
+	  octstr_destroy(xdigest);
      } else if (schemas) { /* we won't even look at them. If passed, we only support MD5. */
 	  
-	  sprintf(cmd, "SELECT nonce FROM users where userid = '%.128s' AND domain  = '%.128s'",
-		  tmp1, tmp2);
-	  r = PQexec(c, cmd);
+	  r = PQexecParams(c, "SELECT nonce FROM users where userid = $1 AND domain  = $2",
+			   2, NULL, pvals, NULL, NULL, 0);
 	  has_user = (PQresultStatus(r) == PGRES_TUPLES_OK) &&  (PQntuples(r) >= 1);
 	  if (has_user || ri->conf->auto_reg) { /* auto-reg is allowed. */
 	       Octstr *xnonce = has_user ? NULL : make_nonce(ri->conf->nonce_salt,
@@ -249,12 +261,15 @@ Login_Response_t handle_login(RequestInfo_t *ri, Login_Request_t req)
 	  char *oldsess = req->sessid ? (void *)req->sessid->str : NULL;
 	  char *xmsisdn = req->client && req->client->msisdn ?
 	    csp_String_to_cstr(req->client->msisdn) : NULL;
-	  Octstr *s = make_sess(c, oldsess, tmp1, tmp2, req->client, req->appid, cookie,
+	  Octstr *s = make_sess(c, oldsess, xuser, xdomain, req->client, req->appid, cookie,
 				&err, &code, &uid, &xsid, xmsisdn, ri->ver);
 	  Octstr *clid = make_clientid(req->client, req->appid);
 	  
 	  ri->uid = uid; /* set new UID and session id */
 	  ri->sessid = xsid;
+	  sprintf(ri->_sessid, "%lld", xsid);
+	  sprintf(ri->_uid, "%lld", uid);
+	  
 	  strncpy(ri->xsessid, s ? octstr_get_cstr(s) : "", sizeof ri->xsessid);
 	  if (ri->clientid) 
 	       octstr_destroy(ri->clientid);
@@ -1120,15 +1135,18 @@ Service_Response_t handle_serviceRequest(RequestInfo_t *ri, Service_Request_t re
 }
 
 
-static void save_sess_ctypes(PGconn *c, u_int64_t sessid, int ver,  List *ctypes)
+static void save_sess_ctypes(PGconn *c, char *sessid, int ver,  List *ctypes)
 {
      int i, n;
-     char tmp1[64], tmp2[5], cmd[256];
+     char tmp1[64], tmp2[15];
+     const char *pvals[10];
      PGresult *r;
      /* first Delete any old ones. */
-     sprintf(cmd, "DELETE from session_content_types WHERE sessionid = %llu", sessid);
 
-     r = PQexec(c, cmd);
+     pvals[0] = sessid;
+     
+     r = PQexecParams(c, "DELETE from session_content_types WHERE sessionid = $1",
+		      1, NULL, pvals, NULL, NULL, 0);     
      PQclear(r);
      for (i = 0, n = gwlist_len(ctypes); i< n; i++) {
 	  AcceptedContentType_t ct = gwlist_get(ctypes, i); 
@@ -1137,16 +1155,19 @@ static void save_sess_ctypes(PGconn *c, u_int64_t sessid, int ver,  List *ctypes
 	  unsigned clim = (ver >= CSP_VERSION(1,3)) ? ct->cpolicy_lim : DEFAULT_MAX_CLEN;
 	  char *cpolicy = (ver >= CSP_VERSION(1,3)) && ct->cpolicy ? (char *)ct->cpolicy->str : "N";
 	
+	  sprintf(tmp1, "%u", clen);
+	  sprintf(tmp2, "%u", clim);
 	  
-	  PQ_ESCAPE_STR(c, ctype, tmp1);
-	  PQ_ESCAPE_STR(c, cpolicy, tmp2);	  
-	  sprintf(cmd, "INSERT INTO session_content_types (sessionid,ctype, max_len, cpolicy, cpolicy_limit) "
-		  " VALUES (%llu, '%.64s', %u, '%.1s', %u)",
-		  sessid, tmp1, clen, tmp2, clim);
-	  r = PQexec(c, cmd);
+	  pvals[1] = ctype;
+	  pvals[2] = tmp1;
+	  pvals[3] = cpolicy;
+	  pvals[4] = tmp2;
 	  
+	  r = PQexecParams(c, "INSERT INTO session_content_types (sessionid,ctype, max_len, cpolicy, cpolicy_limit) "
+			   " VALUES ($1, $2, $3, $4,$5)",
+			   5, NULL, pvals, NULL, NULL, 0);     	  	  
 	  if (PQresultStatus(r) != PGRES_COMMAND_OK) 
-	       error(0, "save_cypes failed for session with ID [%llu]: %s", 
+	       error(0, "save_cypes failed for session with ID [%s]: %s", 
 		     sessid, PQerrorMessage(c));
 	  PQclear(r);
 	  
@@ -1154,26 +1175,32 @@ static void save_sess_ctypes(PGconn *c, u_int64_t sessid, int ver,  List *ctypes
      
 }
 
-static void save_sess_charsets(PGconn *c, u_int64_t sessid, int ver, List *charsets)
+static void save_sess_charsets(PGconn *c, char  *sessid, int ver, List *charsets)
 {
 
      int i, n;
-     char cmd[256];
+     const char *pvals[10];
      PGresult *r;
-     /* first Delete any old ones. */
-     sprintf(cmd, "DELETE from session_charsets WHERE sessionid = %llu", sessid);
 
-     r = PQexec(c, cmd);
+     pvals[0] = sessid;
+     /* first Delete any old ones. */
+     r = PQexecParams(c, "DELETE from session_charsets WHERE sessionid = $1",
+		     1, NULL, pvals, NULL, NULL, 0);     
+
      PQclear(r);
      for (i = 0, n = gwlist_len(charsets); i< n; i++) {
 	  PlainTextCharset_t ch = (PlainTextCharset_t)gwlist_get(charsets, i); 
-		  	  
-	  sprintf(cmd, "INSERT INTO session_charsets (sessionid,charset) "
-		  " VALUES (%llu,  %d)",  sessid, (int)ch);
-	  r = PQexec(c, cmd);
+	  char tmp1[64];
+
+	  sprintf(tmp1, "%d", (int)ch);
+	  pvals[1] = tmp1;
+	  
+	  r = PQexecParams(c, "INSERT INTO session_charsets (sessionid,charset) "
+			    " VALUES ($1,  $2)",
+			    2, NULL, pvals, NULL, NULL, 0);     
 	  
 	  if (PQresultStatus(r) != PGRES_COMMAND_OK) 
-	       error(0, "save_charsets failed for session with ID [%llu]: %s", 
+	       error(0, "save_charsets failed for session with ID [%s]: %s", 
 		     sessid, PQerrorMessage(c));
 	  PQclear(r);
 	  
@@ -1184,9 +1211,7 @@ static void save_sess_charsets(PGconn *c, u_int64_t sessid, int ver, List *chars
 static void *handle_capabilitylist(PGconn *c, CapabilityList_t cl,
 				   RequestInfo_t *ri, int *utype)
 {
-     int64_t sid = ri->sessid;
-     char cmd[1024], *s;
-     char  client[64], lang[10], dmethod[5], offlinem[16], onlinem[16];
+     char  ver[10];
      int pull_len, push_len, txt_len, prio, i, n;
      int set_server_poll;
      int sudp_port;
@@ -1198,7 +1223,10 @@ static void *handle_capabilitylist(PGconn *c, CapabilityList_t cl,
      void *uval = NULL; /* result type. */
      int has_stcp = 0, has_shttp = 0, has_wapudp = 0, has_wapsms = 0, cir_mask = 0; 
      PGresult *r;
-	       
+     const char *pvals[20];
+     char xpull_len[64], xpush_len[64], xtxt_len[64], xprio[32], xparse_size[32], xcir_mask[32], xmulti_trans[32];
+     char xsudp_port[32], xspoll_min[32];
+     
      if (ri->ver <= CSP_VERSION(1,2)) { /* defaults for 1.2 and below */
 	  pull_len = txt_len = DEFAULT_MAX_CLEN;
 	  push_len = (cl->aclen > 0) ? cl->aclen : DEFAULT_MAX_CLEN;
@@ -1209,23 +1237,7 @@ static void *handle_capabilitylist(PGconn *c, CapabilityList_t cl,
 	  txt_len = cl->txt_len;
 	  prio = cl->sess_pri;
      }
-     
-     /* escape the dodgy ones... */
-     s = cl->cltype ? (void *)cl->cltype->str : "N/A";
-     PQ_ESCAPE_STR(c, s, client);
-
-     s = cl->dfl_lang ? (void *)cl->dfl_lang->str : "en";
-     PQ_ESCAPE_STR(c, s, lang);
-
-     s = cl->dmethod ? (void *)cl->dmethod->str : "P";
-     PQ_ESCAPE_STR(c, s, dmethod);
-       
-     s = cl->offline_m ? (void *)cl->offline_m->str : "SENDSTORE";
-     PQ_ESCAPE_STR(c, s, offlinem);
-       
-     s = cl->online_m ? (void *)cl->online_m->str : "SERVERLOGIC";
-     PQ_ESCAPE_STR(c, s, onlinem);  
-     
+          
      /* now worry about some defaults. */
      if (cl->poll_min <  ri->conf->min_ttl) {
 	  cl->poll_min = ri->conf->min_ttl;
@@ -1259,29 +1271,51 @@ static void *handle_capabilitylist(PGconn *c, CapabilityList_t cl,
 	  }
 
 
-     sprintf(cmd, 
-	     "UPDATE sessions SET csp_version='%d.%d', pull_len=%d, push_len=%d, text_len=%d, "
-	     "anycontent=%s, client_type='%.64s', lang='%.10s', deliver_method='%.10s', multi_trans=%d, "
-	     "offline_ete_m_handling='%.16s', online_ete_m_handling='%.16s', parse_size=%d, "
-	     "server_poll_min=%d, priority=%d, ip='%.32s', caps = true,cir_mask = %d,sudp_port=%d WHERE id = %lld", 
-	     CSP_MAJOR_VERSION(ri->ver), CSP_MINOR_VERSION(ri->ver), 
-	     pull_len, push_len, txt_len, 
-	     cl->ctype_all ? "true" : "false",
-	     client, lang, dmethod, (int)cl->mtrans,
-	     offlinem, onlinem, (int)cl->psize, 
-	     (int)cl->poll_min, prio, 
-	     octstr_get_cstr(ri->req_ip), 
-	     cir_mask, sudp_port,
-	     sid);
+     sprintf(ver, "%d.%d",CSP_MAJOR_VERSION(ri->ver), CSP_MINOR_VERSION(ri->ver));
+     sprintf(xpull_len, "%d", pull_len);
+     sprintf(xpush_len, "%d", push_len);
+     sprintf(xtxt_len, "%d", txt_len);
+     sprintf(xprio, "%d", prio);
+     sprintf(xparse_size, "%d", (int)cl->psize);
+     sprintf(xmulti_trans, "%d", (int)cl->mtrans);
+     sprintf(xspoll_min, "%d", (int)cl->poll_min);     
+     sprintf(xcir_mask, "%d", cir_mask);
+     sprintf(xsudp_port, "%d", sudp_port);
+     
+     
+     pvals[0] = ver;
+     pvals[1] = xpull_len;
+     pvals[2] = xpush_len;
+     pvals[3] = xtxt_len;
+     pvals[4] = cl->ctype_all ? "true" : "false";
+     pvals[5] = cl->cltype ? (void *)cl->cltype->str : "N/A";
+     pvals[6] = cl->dfl_lang ? (void *)cl->dfl_lang->str : "en";
+     pvals[7] = cl->dmethod ? (void *)cl->dmethod->str : "P";
+     pvals[8] = xmulti_trans;
+     pvals[9] = cl->offline_m ? (void *)cl->offline_m->str : "SENDSTORE";
+     pvals[10] = cl->online_m ? (void *)cl->online_m->str : "SERVERLOGIC";
+     pvals[11] = xparse_size;
+     pvals[12] = xspoll_min;
+     pvals[13] = xprio;
+     pvals[14] = octstr_get_cstr(ri->req_ip);
+     pvals[15] = xcir_mask;
+     pvals[16] = xsudp_port;
+     pvals[17] = ri->_sessid;
+     
+     r = PQexecParams(c, 
+		      "UPDATE sessions SET csp_version=$1, pull_len=$2, push_len=$3, text_len=$4, "
+		      "anycontent=$5, client_type=$6, lang=$7, deliver_method=$8, multi_trans=$9, "
+		      "offline_ete_m_handling=$10, online_ete_m_handling=$11, parse_size=$12, "
+		      "server_poll_min=$13, priority=$14, ip=$15, caps = true,cir_mask = $16,sudp_port=$17 WHERE id = $18", 
+		      18, NULL, pvals, NULL, NULL, 0);
 
-     r = PQexec(c, cmd);
      if (PQresultStatus(r) != PGRES_COMMAND_OK) 
 	  error(0, "handle_cap_request: DB error for session with ID [%.64s]: %s", 
 		ri->xsessid, PQerrorMessage(c));
      PQclear(r);
      
-     save_sess_ctypes(c, sid, ri->ver, cl->ctypes);
-     save_sess_charsets(c, sid, ri->ver, cl->pt_charset);
+     save_sess_ctypes(c, ri->_sessid, ri->ver, cl->ctypes);
+     save_sess_charsets(c, ri->_sessid, ri->ver, cl->pt_charset);
      if (has_shttp && 
 	 ri->ver >= CSP_VERSION(1,2)) { /* supports HTTP. */
 	  char xid[64];
@@ -1468,7 +1502,7 @@ Search_Response_t handle_search(RequestInfo_t *ri, Search_Request_t req)
 {
      int lim, start = -1;
      char tmp1[128], cmd[512];
-     int64_t uid = ri->uid, min; /* userid... */
+     int64_t min; /* userid... */
      Search_Response_t resp = NULL;
      int64_t s_id = ri->sessid, srchid = 0, res_start = 0;
      int  scount = 0;    
@@ -1480,6 +1514,8 @@ Search_Response_t handle_search(RequestInfo_t *ri, Search_Request_t req)
      if (req->slist) { /* starting search... */
 	  int i, j, n, m;
 	  Octstr *crit = octstr_create(""), *sql = NULL; /* build sql in here. */
+	  const char *pvals[100];
+	  int nargs = 0;
 	  
 	  SearchPairList_t spl;
 	  SearchPair_t sp;
@@ -1496,46 +1532,51 @@ Search_Response_t handle_search(RequestInfo_t *ri, Search_Request_t req)
 			 if ((sp = gwlist_get(spl->slist, j)) != NULL) {
 			      char *elem = sp->elem ? (void *)sp->elem->str : NULL;
 			      char *val  = sp->str ? (void *)sp->str->str : ""; 
-			      char xuid[64];
-			      
-			      sprintf(xuid, "%lld", uid);
 
-			      PQ_ESCAPE_STR(c, val, tmp1);			      
 			      if (elem == NULL || val == NULL)
 				   error(0, "missing search element/value in search request for session [%s]!",
 					 ri->xsessid);
-#define DBFIELD(fld,qry,typ,_val) else if (strcasecmp(elem,#fld) == 0) do {\
-                                octstr_format_append(crit, "%s " qry, octstr_len(crit) == 0 ? "" : " AND ", _val); \
-                                qtype = (#typ)[0]; \
-                              } while (0)
+#define DBFIELD(fld,qry,typ,_val) else if (strcasecmp(elem,#fld) == 0) do { \
+					char _tmp[64];			\
+					int use_like = (strstr((qry), "LIKE ") != NULL); \
+					if (use_like) {			\
+					     int _x = nargs+1; pvals[nargs++] = "%"; pvals[nargs++] = (_val); pvals[nargs++] = "%"; \
+					     sprintf(_tmp, "($%d || $%d || $%d)", _x, _x+1, _x+2); \
+					} else {			\
+					     pvals[nargs++] = (_val);	\
+					     sprintf(_tmp, "$%d", nargs); \
+					}				\
+					octstr_format_append(crit, "%s " qry, octstr_len(crit) == 0 ? "" : " AND ", _tmp); \
+					qtype = (#typ)[0];		\
+				   } while (0)
 			      
 			      			      
-			      DBFIELD(USER_AGE_MIN, "extract(YEAR FROM age(dob,current_timestamp)) >= %.32s",U, tmp1);
-			      DBFIELD(USER_AGE_MAX, "extract(YEAR FROM age(dob,current_timestamp)) < %.32s ",U, tmp1);
-			      DBFIELD(USER_COUNTRY, "country LIKE '%%%.64s%%'",U, tmp1);
-			      DBFIELD(USER_FRIENDLY_NAME, "nickname LIKE '%%%.64s%%'",U, tmp1);
-			      DBFIELD(USER_CITY, "city LIKE  '%%%.64s%%'",U, tmp1);
-			      DBFIELD(USER_GENDER, "gender = '%.1s'",U, tmp1);
-			      DBFIELD(USER_INTENTION, "intention LIKE '%%%.128s%%'",U, tmp1);
-			      DBFIELD(USER_INTERESTS_HOBBIES, "hobbies  LIKE '%%%.128s%%'",U, tmp1);
-			      DBFIELD(USER_MARITAL_STATUS, "marital_status='%.1s'",U, tmp1);
-			      DBFIELD(USER_ALIAS, "nickname='%.64s'",U, tmp1);
-			      DBFIELD(USER_ONLINE_STATUS, "online_status='%.64s'",U, tmp1); /* doesn't work! */
-			      DBFIELD(USER_EMAIL_ADDRESS, "email ILIKE '%%%.128s%%'",U, tmp1);
-			      DBFIELD(USER_FIRST_NAME, "firstname ILIKE  '%%%.128s%%'",U, tmp1);
-			      DBFIELD(USER_ID, "full_userid ILIKE '%%%.128s%%'",U, tmp1);
-			      DBFIELD(USER_LAST_NAME, "lastname ILIKE '%%%.128s%%'",U, tmp1);
-			      DBFIELD(USER_MOBILE_NUMBER, "phone ILIKE '%%%.128s%%'",U, tmp1);
+			      DBFIELD(USER_AGE_MIN, "extract(YEAR FROM age(dob,current_timestamp)) >= %s",U, val);
+			      DBFIELD(USER_AGE_MAX, "extract(YEAR FROM age(dob,current_timestamp)) < %s ",U, val);
+			      DBFIELD(USER_COUNTRY, "country LIKE %s",U, val);
+			      DBFIELD(USER_FRIENDLY_NAME, "nickname LIKE %s",U, val);
+			      DBFIELD(USER_CITY, "city LIKE  %s",U, val);
+			      DBFIELD(USER_GENDER, "gender = %s",U, val);
+			      DBFIELD(USER_INTENTION, "intention LIKE %s",U, val);
+			      DBFIELD(USER_INTERESTS_HOBBIES, "hobbies  LIKE %s",U, val);
+			      DBFIELD(USER_MARITAL_STATUS, "marital_status=%s",U, val);
+			      DBFIELD(USER_ALIAS, "nickname=%s",U, val);
+			      DBFIELD(USER_ONLINE_STATUS, "online_status=%s",U, val); /* doesn't work! */
+			      DBFIELD(USER_EMAIL_ADDRESS, "email ILIKE %s",U, val);
+			      DBFIELD(USER_FIRST_NAME, "firstname ILIKE  %s",U, val);
+			      DBFIELD(USER_ID, "full_userid ILIKE %s",U, val);
+			      DBFIELD(USER_LAST_NAME, "lastname ILIKE %s",U, val);
+			      DBFIELD(USER_MOBILE_NUMBER, "phone ILIKE %s",U, val);
 			      
 			      /* now the group ones. */
-			      DBFIELD(GROUP_ID,"group_id ILIKE '%%%.128s%%'",G,tmp1);
-			      DBFIELD(GROUP_NAME,"group_name ILIKE '%%%.128s%%'",G,tmp1);
-			      DBFIELD(GROUP_TOPIC,"topic ILIKE '%%%.128s%%'",G,tmp1);
+			      DBFIELD(GROUP_ID,"group_id ILIKE %s",G,val);
+			      DBFIELD(GROUP_NAME,"group_name ILIKE %s",G,val);
+			      DBFIELD(GROUP_TOPIC,"topic ILIKE %s",G,val);
 			      DBFIELD(GROUP_USER_ID_JOINED,"id IN (SELECT groupid FROM group_members WHERE local_userid = %s and isjoined = true)",
-				      G,xuid);
+				      G,ri->_uid);
 
-			      DBFIELD(GROUP_USER_ID_OWNER,"creator = %s",G,xuid);
-			      DBFIELD(GROUP_USER_ID_AUTOJOIN,"id IN (SELECT group_id FROM group_members_view WHERE local_userid = %s AND auto_join = 'T')",G,xuid);
+			      DBFIELD(GROUP_USER_ID_OWNER,"creator = %s",G,ri->_uid);
+			      DBFIELD(GROUP_USER_ID_AUTOJOIN,"id IN (SELECT group_id FROM group_members_view WHERE local_userid = %s AND auto_join = 'T')",G,ri->_uid);
 			      /* XXXX how will SSP integrate with this cleanly?? */
 			      else 
 				   error(0, "unknown/unsupported search field [%.32s]", elem);
@@ -1566,10 +1607,11 @@ Search_Response_t handle_search(RequestInfo_t *ri, Search_Request_t req)
 	  }
 	  sprintf(tmp1, "%lld", srchid);
 	  sql = octstr_format("INSERT INTO search_results (sid,v1,v2) "
-			      "SELECT %s,%s,%s FROM %s WHERE %S LIMIT %d RETURNING id", tmp1, fld1,fld2,tbl, crit,
+			      "SELECT %s,%s,%s FROM %s WHERE %S LIMIT %d RETURNING id", 
+			      tmp1, fld1,fld2,tbl, crit,
 			      DEFAULT_MAX_SEARCH_LIMIT); 
 
-	  r = PQexec(c, octstr_get_cstr(sql));
+	  r = PQexecParams(c, octstr_get_cstr(sql), nargs, NULL, pvals, NULL, NULL, 0);
 	  
 	  if (PQresultStatus(r) == PGRES_TUPLES_OK && PQntuples(r) > 0) {
 	       char *s = PQgetvalue(r, 0, 0);
@@ -1749,8 +1791,10 @@ int verify_sender(PGconn *c, Sender_t *xsender, int64_t uid,
 			 Octstr *clientid, int64_t *mygid, char **err)
 {
      char xid[DEFAULT_BUF_LEN], xdomain[DEFAULT_BUF_LEN];
-     char tmp1[DEFAULT_BUF_LEN], tmp2[DEFAULT_BUF_LEN];
-     char cmd[512];
+     char tmp2[64];
+     
+     const char *pvals[10];
+     
      int res;
      PGresult *r;
      Sender_t sender = xsender ? *xsender : NULL;
@@ -1765,7 +1809,8 @@ int verify_sender(PGconn *c, Sender_t *xsender, int64_t uid,
 	  Group_t grp = sender->u.val;
 	  int64_t gid;	 
 	  ScreenName_t s;
-	  char *fld;
+	  char xgid[64];
+	  const char *cmd;
 	  
 	  if (grp->u.typ != Imps_ScreenName || grp->u.val == NULL) {
 	       *err = "invalid user!";
@@ -1785,18 +1830,18 @@ int verify_sender(PGconn *c, Sender_t *xsender, int64_t uid,
 	  /* find the group, then find out if the user is in the group with the given screen name. */
 	  extract_id_and_domain((char *)s->gid->str, xid, xdomain);
 	  
-	  PQ_ESCAPE_STR_LOWER(c, xid, tmp1);
-	  PQ_ESCAPE_STR_LOWER(c, xdomain, tmp2);
-
 	  /* if it is not a local domain, don't check further. */
-	  if (get_islocal_domain(c, tmp2) == 0) {
+	  if (get_islocal_domain(c, xdomain) == 0) {
 	       csp_msg_free(*xsender);
 	       *xsender = make_sender_struct2(userid, clientid, NULL, NULL);
 	       return 200;
 	  }
 	  
-	  sprintf(cmd, "SELECT id FROM groups WHERE groupid = '%.128s' AND domain = '%.128s'", tmp1, tmp2);
-	  r = PQexec(c, cmd);
+	  pvals[0] = xid;
+	  pvals[1] = xdomain;
+	  r = PQexecParams(c, "SELECT id FROM groups WHERE groupid = $1 AND domain = $2",
+			   2, NULL, pvals, NULL, NULL, 0);
+
 	  
 	  if (PQresultStatus(r) != PGRES_TUPLES_OK || PQntuples(r) < 1) {
 	       PQclear(r);
@@ -1804,23 +1849,25 @@ int verify_sender(PGconn *c, Sender_t *xsender, int64_t uid,
 	       return 800; /* no such group. */
 	  }
 	  
-	  *mygid = gid = strtoull(PQgetvalue(r, 0, 0), NULL, 10);
+	  strncpy(xgid, PQgetvalue(r, 0, 0), sizeof xgid);
+	  *mygid = gid = strtoull(xgid, NULL, 10);
 	  
 	  PQclear(r);
 	  
 	  /* now verify screen name. */
-	  PQ_ESCAPE_STR_LOWER(c, (char *)s->sname->str, tmp1);	
+	  pvals[0] = (char *)s->sname->str;
+	  pvals[1] = xgid;
+	  
 	  if (uid >= 0) {
-	       fld = "local_userid";
+	       cmd = "SELECT id FROM group_members WHERE local_userid = $3 AND screen_name = $1 AND groupid = $2 isjoined = true";
 	       sprintf(tmp2, "%lld", uid);
+	       pvals[2] = tmp2;
 	  } else {
-	       fld = "foreign_userid";
-	       PQ_ESCAPE_STR_LOWER(c, octstr_get_cstr(userid), tmp2);	       
+	       cmd = "SELECT id FROM group_members WHERE foreign_userid = $3 AND screen_name = $1 AND groupid = $2 isjoined = true";
+	       pvals[2] = octstr_get_cstr(userid);
 	  }
 
-	  sprintf(cmd, "SELECT id FROM group_members WHERE %s = '%.128s' AND screen_name = '%.128s' AND isjoined = true", 
-		  fld, tmp2, tmp1);
-	  r = PQexec(c, cmd);
+	  r = PQexecParams(c, cmd, 3, NULL, pvals, NULL, NULL, 0);
 	  
 	  res = (PQresultStatus(r) == PGRES_TUPLES_OK && PQntuples(r) > 0) ? 200 : 810;
 	  *err = (res == 800) ? "Missing group or screen name mismatch" : "";
@@ -1834,10 +1881,8 @@ int verify_sender(PGconn *c, Sender_t *xsender, int64_t uid,
 	  int islocal;
 	  
 	  extract_id_and_domain((char *)user->str, xid, xdomain);
-	  PQ_ESCAPE_STR_LOWER(c, xid, tmp1);
-	  PQ_ESCAPE_STR_LOWER(c, xdomain, tmp2);
 
-	  if (get_userid(c, tmp1, tmp2, &islocal) != uid) {
+	  if (get_userid(c, xid, xdomain, &islocal) != uid) {
 	       res = 427;
 	       *err = "User mismatch!";
 	  } else if (clientid && x && octstr_compare(x, clientid) != 0) {
@@ -2261,8 +2306,8 @@ Status_t handle_verifyID(RequestInfo_t *ri, VerifyID_Request_t req)
      PGresult *r;
      int64_t uid = ri->uid;
      int i;
-     char tmp1[2*DEFAULT_BUF_LEN+1], tmp2[2*DEFAULT_BUF_LEN+1], tmp3[2*DEFAULT_BUF_LEN + 1];
-     char xid[DEFAULT_BUF_LEN+1], xdomain[DEFAULT_BUF_LEN+1];
+     char tmp1[2*DEFAULT_BUF_LEN+1], tmp3[2*DEFAULT_BUF_LEN + 1];
+     char xid[DEFAULT_BUF_LEN+1], xdomain[DEFAULT_BUF_LEN+1], xuid[64];
      Result_t rs = NULL;
      UserID_t u;
      GroupID_t g;
@@ -2287,27 +2332,21 @@ Status_t handle_verifyID(RequestInfo_t *ri, VerifyID_Request_t req)
 	       
 	       extract_id_and_domain(user, xid, xdomain);
 
-	       PQ_ESCAPE_STR_LOWER(c, xid, tmp1);
-	       PQ_ESCAPE_STR_LOWER(c, xdomain, tmp2);
-
-	       if (get_userid(c, tmp1, tmp2, &local) < 0)
+	       if (get_userid(c, xid, xdomain, &local) < 0)
 		    VRFYID_RESULT_PUT(531, users, csp_msg_copy(u)); /* 531 error, not found */
 	       else  /* success, report it. */
 		    VRFYID_RESULT_PUT(200, users, csp_msg_copy(u));
 	  }
-
+     
+     sprintf(xuid, "%lld", uid);
      sprintf(tmp3, " userid = %lld", uid);
      for (i = 0; i<gwlist_len(req->idlist->clist); i++)
 	  if ((cl = gwlist_get(req->idlist->clist, i)) != NULL) {
 	       char *x = (char *)cl->str;
 	       int local;
 	       
-	       extract_id_and_domain(x, xid, xdomain);
-
-	       PQ_ESCAPE_STR_LOWER(c, xid, tmp1);
-	       PQ_ESCAPE_STR_LOWER(c, xdomain, tmp2);
-	       
-	       if (get_contactlist(c, tmp1, tmp2, tmp3, &local) < 0)
+	       extract_id_and_domain(x, xid, xdomain);	       
+	       if (get_contactlist(c, xid, xdomain, tmp3, &local) < 0)
 		    VRFYID_RESULT_PUT(700, clist, csp_msg_copy(cl));
 	       else  /* success, report it. */
 		    VRFYID_RESULT_PUT(200, clist, csp_msg_copy(cl));
@@ -2320,10 +2359,7 @@ Status_t handle_verifyID(RequestInfo_t *ri, VerifyID_Request_t req)
 	       
 	       extract_id_and_domain(x, xid, xdomain);
 
-	       PQ_ESCAPE_STR_LOWER(c, xid, tmp1);
-	       PQ_ESCAPE_STR_LOWER(c, xdomain, tmp2);
-	       
-	       if (get_groupid(c, tmp1, tmp2, &local) < 0)
+	       if (get_groupid(c, xid, xdomain, &local) < 0)
 		    VRFYID_RESULT_PUT(800, grps, csp_msg_copy(g));
 	       else  /* success, report it. */
 		    VRFYID_RESULT_PUT(200, grps, csp_msg_copy(g));
@@ -2337,22 +2373,19 @@ Status_t handle_verifyID(RequestInfo_t *ri, VerifyID_Request_t req)
 	       int64_t xgid;
 	       
 	       extract_id_and_domain(x, xid, xdomain);
-
-	       PQ_ESCAPE_STR_LOWER(c, xid, tmp1);
-	       PQ_ESCAPE_STR_LOWER(c, xdomain, tmp2);
 	       
-	       if ((xgid = get_groupid(c, tmp1, tmp2, &local)) < 0)
+	       if ((xgid = get_groupid(c, xid, xdomain, &local)) < 0)
 		    VRFYID_RESULT_PUT(901, snames, csp_msg_copy(s));
 	       else  { /* look for the screen name. Do we check if user is in group?? */
-		    char cmd[512];
-		    char *sname = (char *)s->sname->str;
+		    char xxgid[64];
+		    const char *pvals[10] = {xxgid, (char *)s->sname->str, xuid};
 		    
-		    PQ_ESCAPE_STR_LOWER(c, sname, tmp3);
+		    
+		    sprintf(xxgid, "%lld", xgid);		    
 	       
-		    sprintf(cmd, "SELECT id FROM group_members WHERE groupid = %lld AND screen_name='%.128s' AND "
-			    "%lld IN (SELECT local_userid FROM group_members WHERE groupid = %lld AND local_userid = %lld)",
-			    xgid, tmp3, uid, xgid, uid);
-		    r = PQexec(c, cmd);
+		    r = PQexecParams(c,"SELECT id FROM group_members WHERE groupid = $1 AND screen_name=$2 AND "
+				     "$3 IN (SELECT local_userid FROM group_members WHERE groupid = $1 AND local_userid = $3)",
+				     3, NULL, pvals, NULL, NULL, 0);
 		     
 		    if (PQresultStatus(r) == PGRES_TUPLES_OK && PQntuples(r) > 0)
 			 VRFYID_RESULT_PUT(200, snames, csp_msg_copy(s));

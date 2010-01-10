@@ -15,6 +15,7 @@
 #include "pgconnpool.h"
 #include "cspcir.h"
 #include "cspim.h"
+#include "baraza.h"
 #include <wap/wsp_headers.h>
 static int cir_stop = 0;
 
@@ -101,13 +102,14 @@ static void cir_http_request_handler(List *req_list)
 void cir_newmsg(CIRTarget_t *x)
 {
      /* first lets see if we can find a session for this user. */
-     char cmd[512], tmp1[DEFAULT_BUF_LEN];
+     char xuid[64], tmp1[DEFAULT_BUF_LEN];
      int64_t uid;
      char * clientid;
      PGresult *r  = NULL;
      int i, n;
      PGconn *c = pg_cp_get_conn();
      Dict *dd = dict_create(7, NULL);
+     const char *pvals[4];
      
      gw_assert(x);
      if (is_bot(c, x->uid, tmp1, NULL) && tmp1[0]) { /* handle Bot. */
@@ -118,22 +120,22 @@ void cir_newmsg(CIRTarget_t *x)
      uid = x->uid;
      clientid = x->clientid;
      
-     if (clientid && clientid[0]) {
-	  PQ_ESCAPE_STR(c, clientid, tmp1);	  	  
-	  sprintf(cmd, 
-		  "SELECT sessionid,cookie, csp_version,msisdn,request_ip,cir_mask,sudp_port "
-		  " FROM sessions WHERE userid = %lld "
-		  "AND "
-		  " (clientid = '%.128s' OR clientid = '');",
-		  uid, tmp1);
-     } else 
-	  sprintf(cmd, 
-		  "SELECT sessionid,cookie, csp_version,msisdn,request_ip,cir_mask,sudp_port "
-		  " FROM sessions WHERE userid = %lld ",
-		  uid);
-	  
-     r = PQexec(c, cmd);
+     sprintf(xuid, "%lld", uid);
+
+     pvals[0] = xuid;
+     pvals[1] = clientid;
      
+     if (clientid && clientid[0]) 
+	  r = PQexecParams(c, "SELECT sessionid,cookie, csp_version,msisdn,request_ip,cir_mask,sudp_port "
+			   " FROM sessions WHERE userid = $1 "
+			   "AND "
+			   " (clientid = $2 OR clientid = '')",
+			   2, NULL, pvals, NULL, NULL, 0);
+     else 
+	  r = PQexecParams(c, "SELECT sessionid,cookie, csp_version,msisdn,request_ip,cir_mask,sudp_port "
+			   " FROM sessions WHERE userid = $1 ",
+			   1, NULL, pvals, NULL, NULL, 0);
+	       
      if (PQresultStatus(r) != PGRES_TUPLES_OK || PQntuples(r) < 1) 
 	  goto done;
      
@@ -376,8 +378,9 @@ static void cir_tcp_handler(void *unused)
      
      do {
 	  struct sockaddr_in addr;
-	  socklen_t alen;
+	  socklen_t alen = 0;
 
+	  memset(&addr, 0, sizeof addr);
 	  int fd = accept(cir_tcp_socket, (struct sockaddr *)&addr, &alen);
 	  Octstr *ip = (fd >= 0) ? host_ip(addr) : NULL;	  
 	  Connection *conn;
@@ -484,6 +487,7 @@ static void send_to_bot(PGconn *c, int64_t bot_uid, char url[])
 	       .pull_len = INT_MAX, 
 	       .deliver_method = Push_DMethod
 	  },
+	  .conf = config,
      }, *ri = &_ri;
 
      
@@ -492,11 +496,12 @@ static void send_to_bot(PGconn *c, int64_t bot_uid, char url[])
      
      ri->c = c;
      ri->uid = bot_uid;
-     
+     sprintf(ri->_uid, "%lld", ri->uid);
+
      while ((msg = get_pending_msg(ri)) != NULL) {
 	  int typ = CSP_MSG_TYPE(msg);
 	  Octstr *data = NULL, *sender = NULL, *ctype = NULL;
-	  Octstr *body = NULL, *rb = NULL, *u;
+	  Octstr *body = NULL, *rb = NULL, *u = NULL;
 	  List *rh = http_create_empty_headers(), *xh = NULL;
 	  NewMessage_t m;
 	  MIMEEntity *x;
@@ -599,6 +604,7 @@ static void send_to_bot(PGconn *c, int64_t bot_uid, char url[])
 		    csp_msg_free(z);
 		    octstr_destroy(enc);
 		    gwlist_destroy(el, (void *)octstr_destroy); /* ignore errors. */
+		    csp_msg_free(sm);
 	       }
 	  } else  {
 	       char xuid[64];
@@ -614,5 +620,6 @@ static void send_to_bot(PGconn *c, int64_t bot_uid, char url[])
 	  octstr_destroy(rb);
 	  http_destroy_headers(xh);
 	  http_destroy_headers(rh);
+	  octstr_destroy(u);
      }
 }

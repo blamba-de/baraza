@@ -28,12 +28,13 @@
 /* We use the newer DNS query interface. Much nicer. */
 static int compare_srv(SrvRecord_t a, SrvRecord_t b);
 
+#if 0
 SrvRecord_t dns_find_srv(char *domain, char *service, int *count)
 {
      unsigned char pkt[MAX_PACKET];     
      long i, dlen,  n_ans;
      SrvRecord_t resp = NULL;
-     struct __res_state res;
+     struct __res_state res = {0};
      ns_msg msg;
      
      res.options = 0;
@@ -85,7 +86,62 @@ SrvRecord_t dns_find_srv(char *domain, char *service, int *count)
      return resp;
 }
 
+#else
 
+SrvRecord_t dns_find_srv(char *domain, char *service, int *count)
+{
+     unsigned char pkt[MAX_PACKET];     
+     long i, dlen,  n_ans;
+     SrvRecord_t resp = NULL;
+ 
+     ns_msg msg;
+     
+     if ((dlen = res_querydomain(service, domain, ns_c_in, ns_t_srv, pkt, sizeof pkt)) < 0 ||
+	 ns_initparse(pkt, dlen, &msg) < 0 ||
+	 (n_ans = ns_msg_count(msg, ns_s_an)) <= 0) {
+	  *count = 0;
+	  goto done;
+     }
+          
+     resp = gw_malloc(n_ans*sizeof resp[0]);
+     memset(resp, 0, n_ans*sizeof resp[0]);
+
+     for (i = 0; i < n_ans; i++) {
+	  ns_rr rr;
+	  unsigned char *srv_data;
+
+	  /* Now parse the answer section. */	  
+	  if (ns_parserr(&msg, ns_s_an, i, &rr) < 0)
+	       break; /* we are done. */
+	  
+	  if (ns_rr_type(rr) != ns_t_srv)  /* skip it: We only want SRV records*/
+	       continue;
+
+	  srv_data = (void *)ns_rr_rdata(rr);
+	  
+	  /* parse SRV record from srv data field*/
+	  NS_GET16(resp[i].priority, srv_data);
+	  NS_GET16(resp[i].weight, srv_data);
+	  NS_GET16(resp[i].port, srv_data);
+	  /* name follows immediately... */
+	  if (ns_name_ntop(srv_data, resp[i].host, sizeof resp[i].host) < 0)
+	       break;
+	  
+	  resp[i].rweight =  (resp[i].weight != 0) ?
+	       1 + gw_rand() % (10000 * resp[i].weight) : 0;
+	  
+     }
+     
+     /* sort them. */
+     qsort(resp, i, sizeof resp[0], (void *)compare_srv);
+     *count = i;
+     
+ done:
+
+     return resp;
+}
+
+#endif
 
 static int compare_srv(SrvRecord_t a, SrvRecord_t b)
 {

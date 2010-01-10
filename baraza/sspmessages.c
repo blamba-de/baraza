@@ -1414,8 +1414,6 @@ List *csp2ssp_msg(void *msg, void *orig_msg, Sender_t sender, List *rcptlist)
 		    int islocal;					\
 		    							\
 		    extract_id_and_domain(ux, xid, xdomain);		\
-		    PQ_ESCAPE_STR(c, xid,tmp1);				\
-		    PQ_ESCAPE_STR(c, xdomain,tmp2);			\
 									\
 		    if ((uid = get_userid(c, xid, xdomain, &islocal)) < 0 || \
 			islocal == 0) {					\
@@ -1463,8 +1461,6 @@ static Result_t verify_ssp_recipients(PGconn *c, List *rcpt_users, Recipient_t r
 			 continue;
 		    
 		    extract_id_and_domain(gx, xid, xdomain);		
-		    PQ_ESCAPE_STR(c, xid,tmp1);				
-		    PQ_ESCAPE_STR(c, xdomain,tmp2);			
 		    
 		    if ((uid = get_groupid(c, xid, xdomain, &islocal)) < 0 || 
 			islocal == 0) {					

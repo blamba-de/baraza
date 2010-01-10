@@ -46,18 +46,23 @@ static List *do_trans(PGconn *c, xmlNodePtr transnode, int mode, char *trans, ch
 
 static Octstr *get_ssp_session_info(PGconn *c, char *sessid, Octstr **b_url, Octstr **b_domain)
 {
-     char buf[512], tmp[DEFAULT_BUF_LEN], *p;
+     char tmp[DEFAULT_BUF_LEN], *p;
      Octstr *a_sid;
      PGresult *r;
+     const char *pvals[5];
      
-     PQ_ESCAPE_STR(c, sessid, tmp);
+     strncpy(tmp, sessid, sizeof tmp);
+     pvals[0] = tmp;
+
      if ((p = strchr(tmp, '@')) != NULL)
 	  p++;
      else 
-	  p = "";
-     sprintf(buf, "UPDATE ssp_sessions SET ldate = current_timestamp WHERE b_sessionid = '%.128s' AND "
-	     " ssp_domain = '%.128s' RETURNING ssp_domain_url, a_sessionid, ssp_domain", tmp, p);
-     r = PQexec(c, buf);
+	  p = "";     
+     pvals[1] = p;
+     
+     r = PQexecParams(c, "UPDATE ssp_sessions SET ldate = current_timestamp WHERE b_sessionid = $1 AND "
+		      " ssp_domain = $2 RETURNING ssp_domain_url, a_sessionid, ssp_domain", 
+		      2, NULL, pvals, NULL, NULL, 0);
      if (PQresultStatus(r) == PGRES_TUPLES_OK && PQntuples(r) > 0) {
 	  char *x = PQgetvalue(r, 0, 0);
 	  *b_url = octstr_create(x);
@@ -367,19 +372,19 @@ static int ssp_get_session(PGconn *c, char *domain, Octstr *our_domain, Octstr *
 {     
      int i, n,  res;
      int scount = 0;
-     char buf[512], tmp1[DEFAULT_BUF_LEN];
      PGresult *r;
      SrvRecord_t recs;
      Octstr *a_secret;
-
+     const char *pvals[5];
+     
      *sessid = NULL;
      *url = NULL;
 
-     PQ_ESCAPE_STR(c, octstr_get_cstr(our_domain), tmp1);
-     sprintf(buf, "SELECT ssp_domain_url, a_sessionid, to_char(ldate,'YYYYMMDD') FROM ssp_sessions WHERE "
-	     "ssp_domain = '%.128s' AND mydomain='%.128s'", domain, tmp1);
-     r = PQexec(c, buf);
-
+     pvals[0] = domain;
+     pvals[1] = octstr_get_cstr(our_domain);     
+     r = PQexecParams(c, "SELECT ssp_domain_url, a_sessionid, to_char(ldate,'YYYYMMDD') FROM ssp_sessions WHERE "
+		      "ssp_domain = $1 AND mydomain=$2",
+		      2, NULL, pvals, NULL, NULL, 0);
      if (PQresultStatus(r) == PGRES_TUPLES_OK && (n = PQntuples(r)) > 0) { /* we got something. */
 	  for (i = 0; i<n; i++) {
 	       char *u = PQgetvalue(r, i, 0);
@@ -416,13 +421,14 @@ static int ssp_get_session(PGconn *c, char *domain, Octstr *our_domain, Octstr *
      
      a_secret = make_secret(domain, octstr_get_cstr(our_domain));
      /* we first create the entry so we have a transaction ID. */
-     PQ_ESCAPE_STR(c, octstr_get_cstr(our_domain), tmp1);
-     sprintf(buf, "INSERT INTO ssp_sessions (ssp_domain, outgoing, a_secret, mydomain) "
-	     " VALUES ('%.128s', true, '%.128s', '%.128s') RETURNING id",
-	     domain, octstr_get_cstr(a_secret), tmp1);
 
+     pvals[0] = domain;
+     pvals[1] = octstr_get_cstr(a_secret);
+     pvals[2] = octstr_get_cstr(our_domain);
      
-     r = PQexec(c, buf);
+     r = PQexecParams(c, "INSERT INTO ssp_sessions (ssp_domain, outgoing, a_secret, mydomain) "
+		      " VALUES ($1, true, $2, $3) RETURNING id",
+		      3, NULL, pvals, NULL, NULL, 0);
      if (PQresultStatus(r) == PGRES_TUPLES_OK && PQntuples(r) > 0) 	  
 	  try_send_secret(c, recs, scount, 
 			  PQgetvalue(r, 0, 0), 
@@ -627,11 +633,14 @@ static List *do_trans(PGconn *c, xmlNodePtr transchild, int mode, char *trans, c
 static Octstr *do_setup_trans(PGconn *c, xmlNodePtr node, int mode, char *trans, Octstr **b_url,
 			      int *our_mode, Octstr **our_transid, HTTPClient *hc, int *reply_sent)
 {
-     char buf[512], tmp1[DEFAULT_BUF_LEN], tmp2[DEFAULT_BUF_LEN], tmp3[DEFAULT_BUF_LEN];
-     char *fld,  value[DEFAULT_BUF_LEN], *xtid;
-     	  char mytid[100];
+     char buf[512], tmp1[DEFAULT_BUF_LEN];
+     char *fld,  *xtid;
+     char mytid[100];
      Octstr *res = NULL;
-
+     const char *pvals[5];
+     const char *cmd = NULL;
+     int nargs;
+     
      xtid = NULL;     
      if (xmlStrcasecmp(node->name,  (void *)"SendSecretToken") == 0) { /* sending a secret. */	       
 	  char *sid = NATTR(node, "serviceID"), *x;
@@ -654,17 +663,15 @@ static Octstr *do_setup_trans(PGconn *c, xmlNodePtr node, int mode, char *trans,
 	       octstr_base64_to_binary(b_secret);
 	       xmlFree(x);
 	  }
-	  PQ_ESCAPE_STR(c, domain, tmp1);	       	  
-	  PQ_ESCAPE_STR(c, octstr_get_cstr(b_secret), tmp2);
+	  
+	  pvals[0] = domain;
+	  pvals[1] = octstr_get_cstr(b_secret);	  
+	  pvals[2] = trans ? trans : "";
 	  if (mode == Response_MODE) { /* domain is responding, so we'll send a login-request */	       
-	       
-	       PQ_ESCAPE_STR(c, trans ? trans : "", tmp3);	  
-	       
 	       /* Sec 9.2.1 says that the response we send has our own transaction ID. Why should it?? */
-	       sprintf(buf, "UPDATE ssp_sessions SET b_secret = '%.128s',b_transid = '%.128s'  WHERE "
-		       " ssp_domain='%.128s' AND b_secret IS NULL AND outgoing = true RETURNING id,ssp_domain_url,mydomain", 
-		       tmp2, tmp3, tmp1); 
-	       r = PQexec(c, buf);
+	       r = PQexecParams(c, "UPDATE ssp_sessions SET b_secret = $2,b_transid = $3  WHERE "
+				" ssp_domain=$1 AND b_secret IS NULL AND outgoing = true RETURNING id,ssp_domain_url,mydomain", 
+				3, NULL, pvals, NULL, NULL, 0);
 
 	       if (PQresultStatus(r) == PGRES_TUPLES_OK &&
 		   PQntuples(r) > 0) { /* We found one, so lets send loginrequest. */
@@ -698,13 +705,14 @@ static Octstr *do_setup_trans(PGconn *c, xmlNodePtr node, int mode, char *trans,
 	       PGresult *r;
 
 	       res = NULL; /* assume error. */
-	       
-	       PQ_ESCAPE_STR(c, trans ? trans : "", tmp3);	  
-	       sprintf(buf, "INSERT INTO ssp_sessions (ssp_domain, outgoing, a_secret, b_secret, mydomain, b_transid) "
-		       " VALUES ('%.128s', false, '%.128s', '%.128s', '%.128s', '%.128s') RETURNING id",
-		       tmp1, octstr_get_cstr(a_secret), tmp2, mydomain, tmp3);     
 
-	       r = PQexec(c, buf);
+	       pvals[3] = octstr_get_cstr(a_secret);
+	       pvals[4] = mydomain;
+
+	       r = PQexecParams(c, "INSERT INTO ssp_sessions (ssp_domain, outgoing, a_secret, b_secret, mydomain, b_transid) "
+				" VALUES ($1, false, $4, $2, $5, $3) RETURNING id",
+				5, NULL, pvals, NULL, NULL, 0);	       
+
 	       if (PQresultStatus(r) != PGRES_TUPLES_OK || PQntuples(r) <= 0)
 		    goto done1;	       
 
@@ -741,7 +749,6 @@ static Octstr *do_setup_trans(PGconn *c, xmlNodePtr node, int mode, char *trans,
 	   * If this is a response, then must have sent a login request before, so we verify and send back a loginresponse.
 	   */
 
-	  PQ_ESCAPE_STR(c, domain ? domain + 1 : "", tmp1);	       	  
 	  if (snode == NULL || sid == NULL) {
 	       if (sid) 
 		    xmlFree(sid);
@@ -755,22 +762,22 @@ static Octstr *do_setup_trans(PGconn *c, xmlNodePtr node, int mode, char *trans,
 	  }
 
 	  /* Get our secret. */
-	  if (mode == Request_MODE)  {
+	  if (mode == Request_MODE)  
 	       fld = "b_transid";
-	       PQ_ESCAPE_STR(c, trans, value);
-	  } else {
-	       int64_t tid = -1;
-	       fld = "id";
-	       sscanf(trans, "%lld", &tid); /* just to be sure... */
-	       sprintf(value, "%lld", tid);
+	   else {
+		int64_t tid = -1;
+		fld = "id";
+	       sscanf(trans, "%lld", &tid); /* just to be sure... */	       
 	  }
+	  pvals[0] = trans;
+	  pvals[1] = domain ? domain + 1 : "";
 	  
 	  sprintf(buf, "SELECT a_secret,id,b_secret,mydomain,ssp_domain_url FROM ssp_sessions "
-		  "WHERE %s = '%.128s' AND ssp_domain = '%.128s'",
-		  fld, value, tmp1);	  
-	  r = PQexec(c, buf);
+		  "WHERE %s = $1 AND ssp_domain = $2",
+		  fld);	  
+	  r = PQexecParams(c, buf, 2, NULL, pvals, NULL, NULL, 0);
 	  if (PQresultStatus(r) != PGRES_TUPLES_OK || PQntuples(r) <= 0) {
-	       buf[0] = 0; /* prevent execution of SQL below. */
+	       cmd = NULL; /* prevent execution of SQL below. */
 	       goto done2;
 	  }
 	  
@@ -785,8 +792,10 @@ static Octstr *do_setup_trans(PGconn *c, xmlNodePtr node, int mode, char *trans,
 	  octstr_destroy(y);
 	  
 	  if (pw_ok != 0) { /* close connection! */
-	       res = NULL;
-	       sprintf(buf, "DELETE FROM ssp_sessions WHERE id = %s", mytid);
+	       res = NULL;	       
+	       cmd = "DELETE FROM ssp_sessions WHERE id = $1";
+	       pvals[0] = mytid; 
+	       nargs = 1;
 	       goto done2;
 	  }
 	  
@@ -812,10 +821,12 @@ static Octstr *do_setup_trans(PGconn *c, xmlNodePtr node, int mode, char *trans,
 	       xtid = mytid;
 	       *our_mode = Request_MODE;	       
 	  }
-	  sprintf(buf, "UPDATE ssp_sessions SET pw_check_ok = true WHERE id = %s", mytid);     
+	  cmd = "UPDATE ssp_sessions SET pw_check_ok = true WHERE id = $1";
+	  pvals[0] = mytid;
+	  nargs = 1;
      done2:
-	  if (buf[0]) {
-	       PGresult *r = PQexec(c, buf);
+	  if (cmd) {
+	       PGresult *r = PQexecParams(c, cmd, nargs, NULL, pvals, NULL, NULL, 0);
 	       PQclear(r);
 	  }
 	  octstr_destroy(pwdigest);
@@ -835,21 +846,20 @@ static Octstr *do_setup_trans(PGconn *c, xmlNodePtr node, int mode, char *trans,
 	  } else 
 	       code = -1;
 	  
-	  if (mode == Request_MODE)  {
+	  if (mode == Request_MODE)  
 	       fld = "b_transid";
-	       PQ_ESCAPE_STR(c, trans, value);
-	  } else {
+	  else {
 	       int64_t tid = -1;
 	       fld = "id";
 	       sscanf(trans, "%lld", &tid); /* just to be sure... */
-	       sprintf(value, "%lld", tid);
 	  }
-	  
-	  sprintf(buf, "SELECT id, pw_check_ok,mydomain,ssp_domain_url FROM ssp_sessions WHERE %s = '%.128s'", fld, value);
-	  r = PQexec(c, buf);
+
+	  pvals[0] = trans;
+	  sprintf(buf, "SELECT id, pw_check_ok,mydomain,ssp_domain_url FROM ssp_sessions WHERE %s = $1", fld);
+	  r = PQexecParams(c, buf, 1, NULL, pvals, NULL, NULL, 0);
 
 	  if (PQresultStatus(r) != PGRES_TUPLES_OK || PQntuples(r) <= 0) {
-	       buf[0] = 0; /* prevent execution of SQL below. */
+	       cmd = NULL; /* prevent execution of SQL below. */
 	       goto done3;
 	  }
 	  
@@ -857,7 +867,9 @@ static Octstr *do_setup_trans(PGconn *c, xmlNodePtr node, int mode, char *trans,
 	  *b_url = octstr_create(PQgetvalue(r, 0, 3));		    
 	  
 	  if (http_status_class(code) != HTTP_STATUS_SUCCESSFUL) {
-	       sprintf(buf, "DELETE FROM ssp_sessions WHERE id = %s", mytid);
+	       pvals[0] = mytid; 
+	       nargs = 1;
+	       cmd =  "DELETE FROM ssp_sessions WHERE id = $1";;
 	       info(0, "ssp-start trans: Logon failed, mode=%s, code=%d, trans=%s", mode==Request_MODE ? "Request" : "Response", 
 		    code, trans);
 	       goto done3;
@@ -867,7 +879,9 @@ static Octstr *do_setup_trans(PGconn *c, xmlNodePtr node, int mode, char *trans,
 	  if ((x = PQgetvalue(r, 0, 1)) == NULL ||
 	      tolower(x[0]) != 't') { /* we can't receive a login response without a verified passwd.*/
 	       res = NULL;
-	       sprintf(buf, "DELETE FROM ssp_sessions WHERE id = %s", mytid); /* logon failed, close connection. */
+	       pvals[0] = mytid;
+	       nargs = 1;
+	       cmd =  "DELETE FROM ssp_sessions WHERE id = $1"; /* logon failed, close connection. */
 	       goto done3;
 	  } 
 
@@ -879,13 +893,17 @@ static Octstr *do_setup_trans(PGconn *c, xmlNodePtr node, int mode, char *trans,
 	       *our_mode = Response_MODE;
 	  } else 
 	       res = octstr_imm(""); /* no response. We are done. */
-	  PQ_ESCAPE_STR(c, xmydomain, tmp1);
-	  PQ_ESCAPE_STR(c, sid, tmp2);
-	  sprintf(buf, "UPDATE ssp_sessions SET ldate = current_timestamp, a_sessionid='%s@%.128s', "
-		  "b_sessionid = '%.128s' WHERE  id = %s", mytid, tmp1, tmp2, mytid);	  
+
+	  sprintf(tmp1, "%s@%.128s", mytid, xmydomain);
+	  pvals[0] = tmp1;
+	  pvals[1] = sid;
+	  pvals[2] = mytid;
+	  nargs = 3;
+	  cmd  =  "UPDATE ssp_sessions SET ldate = current_timestamp, a_sessionid=$1, "
+		  "b_sessionid = $2 WHERE  id = $3";	  
      done3:
-	  if (buf[0]) {
-	       PGresult *r = PQexec(c, buf);
+	  if (cmd) {
+	       PGresult *r = PQexecParams(c, cmd, nargs, NULL, pvals, NULL, NULL, 0);
 	       PQclear(r);
 	  }
 	  PQclear(r);

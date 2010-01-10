@@ -1,3 +1,6 @@
+2010-01-07 P. A. Bagyenda <bagyenda@dsmagic.com>
+	* Moved table creation stuff out of code
+	* Started moving pg_escape stuff out of code (reduce risk of sql injection attacks)
 2009-11-25 P. A. Bagyenda <bagyenda@dsmagic.com>
         * Fixed minor json parser bug: allow underscore in field names
 2009-11-04 P. A. Bagyenda <bagyenda@dsmagic.com>

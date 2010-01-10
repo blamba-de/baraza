@@ -1,0 +1,14 @@
+#!/bin/sh
+# Expects tables on standard input
+F=$1
+O=`echo "$F"|sed 's/sql$/h/'`
+
+echo "#ifndef __DB_TABLES_INCLUDED__" > $O
+echo "#define __DB_TABLES_INCLUDED__" >> $O
+echo "/* Auto generated at " `date` " */" >> $O
+echo "static char *table_cmds[] = {" >> $O
+cat $F | awk '/^CREATE.*/ {if (NR != 0) print ","} {if (length($0) > 0) print "\"" $0 "\\n\""} END {print "," "NULL"}'  >> $O
+
+echo "};" >> $O
+
+echo "#endif" >> $O

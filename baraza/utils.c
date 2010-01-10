@@ -452,16 +452,18 @@ int64_t get_object_id(PGconn *c, enum DBObjectTypes_t type,
      char cmd[512];
      PGresult *r;
      int64_t xid;
+     const char *pvals[4] = {id, domain};
      
      if (type < 0 || type > DBObj_ContactList)
 	  return -1;
      
-     sprintf(cmd, "SELECT id from %s WHERE lower(%s)=lower('%.128s') AND lower(domain) = lower('%.128s') AND %s", 
-	     obj_tables[type], obj_id_fields[type],
-	     id, domain,
+
+     
+     sprintf(cmd, "SELECT id from %s WHERE lower(%s)=lower($1) AND lower(domain) = lower($2) AND %s", 
+	     obj_tables[type], obj_id_fields[type],	     
 	     extra_cond ? extra_cond : "TRUE");
      
-     r = PQexec(c, cmd);
+     r = PQexecParams(c, cmd, 2, NULL, pvals, NULL, NULL, 0);
      
      if (PQresultStatus(r) == PGRES_TUPLES_OK &&  PQntuples(r) > 0) {
 	  xid = strtoull(PQgetvalue(r, 0, 0), NULL, 10);
@@ -531,13 +533,11 @@ int get_object_name_and_domain(PGconn *c, enum DBObjectTypes_t type, int64_t id,
 int get_islocal_domain(PGconn *c, char *domain)
 {
      int x;
-     char cmd[512];
      PGresult *r;
+     const char *pvals[1] = {domain};
      
-     sprintf(cmd, "SELECT id from localdomains WHERE lower(domain) = lower('%.128s')", domain);
-     
-     r = PQexec(c, cmd);
-     
+     r = PQexecParams(c, "SELECT id from localdomains WHERE lower(domain) = lower($1)",
+		      1, NULL, pvals, NULL, NULL, 0);
      x = (PQresultStatus(r) == PGRES_TUPLES_OK) && (PQntuples(r) > 0);
      PQclear(r);
 
@@ -558,8 +558,13 @@ void set_has_cir(PGconn *c, int64_t sid, int has_cir)
 static int get_session_id_real(PGconn *c, char *fld, char *val, RequestInfo_t *req)
 {
      PGresult *r;
-     char tmp1[DEFAULT_BUF_LEN], tmp2[2*DEFAULT_BUF_LEN], tmp3[2*DEFAULT_BUF_LEN], cmd[1024], *x;
+     char tmp2[128], tmp3[128], cmd[512], *x;
      int major = 1, minor = 1;
+     
+     const char *pvals[20] = {NULL};
+     int plens[20] = {0};
+     int pfrmt[20] = {0};
+     int nargs = 0;
      
      if (c == NULL || PQstatus(c) != CONNECTION_OK)
 	  return -1;
@@ -568,38 +573,38 @@ static int get_session_id_real(PGconn *c, char *fld, char *val, RequestInfo_t *r
 	  req->conf = config; /* Get a copy of the conf. */
 
      /* verify the session. */
-     PQ_ESCAPE_STR(c, val, tmp1);
+     pvals[nargs++] = val;
 
-     if (octstr_len(req->client_ip) > 0) {
-	  char tmp[DEFAULT_BUF_LEN];
-	  PQ_ESCAPE_STR(c, octstr_get_cstr(req->client_ip), tmp);
+     if (octstr_len(req->client_ip) > 0) {	  
+	  pvals[nargs++] = octstr_get_cstr(req->client_ip);
 	  
-	  sprintf(tmp2, ", request_ip = '%.128s'", tmp);
+	  sprintf(tmp2, ", request_ip = $%d", nargs);
      } else 
 	  tmp2[0] = 0;
 
      if (octstr_len(req->msisdn) > 0) {
-	  char tmp[DEFAULT_BUF_LEN];
-	  PQ_ESCAPE_STR(c, octstr_get_cstr(req->msisdn), tmp);
-	  
-	  sprintf(tmp3, ", msisdn = '%.128s'", tmp);
+	  pvals[nargs++] = octstr_get_cstr(req->msisdn);
+	  sprintf(tmp3, ", msisdn = $%d", nargs);
      } else 
 	  tmp3[0] = 0;
      
-     sprintf(cmd, "UPDATE sessions SET lastt = current_timestamp %s %s WHERE  %s = '%.128s' "
-	     "RETURNING  id, userid, clientid,default_notify, pull_len, push_len, deliver_method, "
-	     " (SELECT full_userid FROM users_view WHERE  users_view.id = sessions.userid), "
-	     " cookie,csp_version,ttl,cir , msisdn, request_ip, sessionid",
-	     tmp2, tmp3,     fld, tmp1);
-     r = PQexec(c, cmd);
+
+     sprintf(cmd, "UPDATE sessions SET lastt = current_timestamp %s %s WHERE  %s = $1 "
+	     "RETURNING id, userid, clientid,default_notify, pull_len, push_len, deliver_method, "
+	     " full_userid, cookie,csp_version,ttl,cir , msisdn, request_ip, sessionid",
+	     tmp2, tmp3, fld);
+     r = PQexecParams(c, cmd, nargs,  NULL, pvals, plens, pfrmt, 0);
      if (PQresultStatus(r) != PGRES_TUPLES_OK || PQntuples(r) < 1) {
 	  error(0, "invalid/expired  session [%s=%.64s]!", fld, val);
 	  PQclear(r);
 	  return -1;
      }
      
-     req->sessid = strtoull( PQgetvalue(r, 0, 0), NULL, 10);
-     req->uid = strtoull(PQgetvalue(r, 0, 1), NULL, 10);
+     strncpy(req->_sessid, PQgetvalue(r, 0, 0), sizeof req->_sessid);
+     strncpy(req->_uid, PQgetvalue(r, 0, 1), sizeof req->_uid);
+
+     req->sessid = strtoull(req->_sessid, NULL, 10);
+     req->uid = strtoull(req->_uid, NULL, 10);
      req->clientid = octstr_create(PQgetvalue(r, 0, 2));
      req->sinfo.react = (x = PQgetvalue(r, 0, 3)) && (tolower(x[0]) == 't');
      req->sinfo.pull_len = strtoul(PQgetvalue(r, 0, 4), NULL, 10);
@@ -674,18 +679,22 @@ void update_session_notify(PGconn *c, int64_t sessid, int default_notify)
  */
 int has_pending_msgs_ex(PGconn *c, int64_t uid, Octstr *clientid, unsigned long min_ttl,
 			unsigned long max_ttl, int64_t sessid, int has_cir)
-{
-     
+{     
      PGresult *r;
      char tmp1[DEFAULT_BUF_LEN], cmd[512];
      int res;
+     const char *pvals[20] = {NULL};
+     int plens[20] = {0};
+     int pfrmt[20] = {0};
+    
+     sprintf(tmp1, "%lld", uid);
+     pvals[0] = tmp1;
+     pvals[1] = octstr_get_cstr(clientid);
      
-     PQ_ESCAPE_STR(c, octstr_get_cstr(clientid), tmp1);
-     sprintf(cmd, "SELECT id from csp_message_recipients_view WHERE userid = %lld AND "
-	     " (clientid IS NULL OR clientid = '' OR clientid = '%.128s') AND "
-	     " msg_status = 'N' and edate > current_timestamp LIMIT 1",
-	     uid, tmp1);
-     r = PQexec(c, cmd);
+     r = PQexecParams(c, "SELECT id from csp_message_recipients_view WHERE userid = $1 AND "
+		      " (clientid IS NULL OR clientid = '' OR clientid = $2) AND "
+		      " msg_status = 'N' and edate > current_timestamp LIMIT 1",
+		      2, NULL, pvals, plens, pfrmt, 0);
 
      res = (PQresultStatus(r) == PGRES_TUPLES_OK && PQntuples(r) > 0);
      PQclear(r);
@@ -747,37 +756,51 @@ void check_csp_grant_block_in_use(PGconn *c, int64_t uid,
 
 int check_csp_grant(PGconn *c, Sender_t sender, int64_t sender_uid, int64_t receiver_id)
 {
-     char cmd[1024], tmp1[DEFAULT_BUF_LEN], tmp2[DEFAULT_BUF_LEN], cond[256];
+     char  tmp1[64], tmp2[64];
      PGresult *r;
      int ginuse = 0, binuse = 0;
      int i, n = 0, ret;
      int has_block, has_grant;
+     const char *pvals[20] = {NULL};
+     int plens[20] = {0};
+     int pfrmt[20] = {0};
+     const char *cmd;
+     int nargs;
      
      if (!sender) /* if no sender, then we simply deny? */
 	  return 0;
 
      check_csp_grant_block_in_use(c, receiver_id, &ginuse, &binuse); /* get block flags. */
      
+     sprintf(tmp1, "%lld", receiver_id);
+     pvals[0] = tmp1;
+     
      if (sender->u.typ == Imps_Group) {
 	  Group_t g = sender->u.val;	  
 	  ScreenName_t s = (g->u.typ == Imps_ScreenName) ? g->u.val : NULL;
 	  GroupID_t gid = s ? s->gid : g->u.val;
-	  char cond1[256];
 
-	  PQ_ESCAPE_STR(c, gid ? (char *)gid->str : "", tmp2);	       	  
+	  pvals[1] = gid ? (char *)gid->str : "";
+	  nargs = 2;
 	  if (s) {
-	       PQ_ESCAPE_STR(c, s->sname ? (char *)s->sname->str : "", tmp1);	       
-	       sprintf(cond1, "(screen_name='%.128s' AND group_id = '%.128s') OR ", tmp1, tmp2);
+	       cmd = "SELECT DISTINCT allow FROM access_lists WHERE owner=$1 AND group_id = $2 AND "
+		    "(screen_name=$3 OR screen_name IS NULL) LIMIT 1";
+	       
+	       pvals[2] = s->sname ? (char *)s->sname->str : "";
+	       nargs = 3;
 	  } else 
-	       cond1[0] = 0;
-	  sprintf(cond, "%s (group_id = '%.128s' AND screen_name IS NULL)", cond1, tmp2);	  
-     } else 
-	  sprintf(cond, "local_userid = %lld", sender_uid);
+	       cmd = "SELECT DISTINCT allow FROM access_lists WHERE owner=$1 AND group_id = $2 AND "
+		    " screen_name IS NULL  LIMIT 1";
+     } else {
+	  sprintf(tmp2, "%lld", sender_uid);
+	  pvals[1] = tmp2;
+	  nargs = 2;
+	  cmd = "SELECT DISTINCT allow FROM access_lists WHERE owner=$1 AND local_userid = $2  LIMIT 1";
+     }
 
      /*Get the block and grants list. */
-     sprintf(cmd, "SELECT DISTINCT allow FROM access_lists WHERE owner=%lld AND (%s) LIMIT 1", receiver_id, cond);
      
-     r = PQexec(c, cmd);
+     r = PQexecParams(c, cmd, nargs, NULL, pvals, plens, pfrmt, 0);
      
      if (PQresultStatus(r) != PGRES_TUPLES_OK)
 	  warning(0, "grant check failed: %s", PQerrorMessage(c));
@@ -798,8 +821,7 @@ int check_csp_grant(PGconn *c, Sender_t sender, int64_t sender_uid, int64_t rece
 	       has_grant |= 1;
      }
      
-     if (binuse /* straight implementation of the flow chart. */
-	 && has_block) {
+     if (binuse && has_block) { /* straight implementation of the flow chart. */
 	  ret = 0;
 	  goto done;
      }
@@ -817,39 +839,52 @@ int check_csp_grant(PGconn *c, Sender_t sender, int64_t sender_uid, int64_t rece
 
 int check_ssp_grant(PGconn *c, Sender_t sender, int64_t receiver_id)
 {
-     char cmd[1024], tmp1[DEFAULT_BUF_LEN], tmp2[DEFAULT_BUF_LEN], cond[256];
+     char  tmp1[64];
      PGresult *r;
      
      int i, n = 0, ret;
-     
+     const char *pvals[20] = {NULL};
+     int plens[20] = {0};
+     int pfrmt[20] = {0};
+     const char *cmd;
+     int nargs;
+
      if (!sender)
 	  return 0;
 
+     sprintf(tmp1, "%lld", receiver_id);     
+     pvals[0] = tmp1;
+     
      if (sender->u.typ == Imps_Group) {
 	  Group_t g = sender->u.val;	  
 	  ScreenName_t s = (g->u.typ == Imps_ScreenName) ? g->u.val : NULL;
 	  GroupID_t gid = s ? s->gid : g->u.val;
-	  char cond1[256];
 
-	  PQ_ESCAPE_STR(c, gid ? (char *)gid->str : "", tmp2);	       	  
+	  pvals[1] = gid ? (char *)gid->str : "";
+	  nargs = 2;
 	  if (s) {
-	       PQ_ESCAPE_STR(c, s->sname ? (char *)s->sname->str : "", tmp1);	       
-	       sprintf(cond1, "(screen_name='%.128s' AND group_id = '%.128s') OR ", tmp1, tmp2);
+	       pvals[2] = s->sname ? (char *)s->sname->str : "";
+	       
+	       cmd = "SELECT DISTINCT allow FROM access_lists WHERE owner=$1 AND group_id = $2 AND "
+		    " (screen_name = $3 OR screen_name IS NULL) LIMIT 1";
+	       nargs++;
 	  } else 
-	       cond1[0] = 0;
-	  sprintf(cond, "%s (group_id = '%.128s' AND screen_name IS NULL)", cond1, tmp2);	  
+	       cmd = "SELECT DISTINCT allow FROM access_lists WHERE owner=$1 AND group_id = $2 AND "
+		    " screen_name IS NULL LIMIT 1";	      
      } else {
 	  User_t u = sender->u.val;
 	  UserID_t uid = u ? u->user : NULL;
-	  PQ_ESCAPE_STR(c, uid ? (char *)uid->str : "", tmp2);	       	  
-	  
-	  sprintf(cond, "foreign_userid = '%.128s'", tmp2);
+	  	  
+	  pvals[1] = uid ? (char *)uid->str : "";
+	  nargs = 2;
+
+	  cmd = "SELECT DISTINCT allow FROM access_lists WHERE owner=$1 AND "
+	       " foreign_userid = $2 LIMIT 1";	      
      }
 
      /*Get the block and grants list. */
-     sprintf(cmd, "SELECT DISTINCT allow FROM access_lists WHERE owner=%lld AND (%s) LIMIT 1", receiver_id, cond);
      
-     r = PQexec(c, cmd);
+     r = PQexecParams(c, cmd, nargs, NULL, pvals, plens, pfrmt, 0);
      
      if (PQresultStatus(r) != PGRES_TUPLES_OK)
 	  warning(0, "grant check failed: %s", PQerrorMessage(c));
@@ -1343,21 +1378,29 @@ void *get_pending_msg(RequestInfo_t *ri)
 {
 
      PGresult *r, *r2;
-     char tmp1[DEFAULT_BUF_LEN], cmd[512], cmd2[512];
+     char tmp1[64],  *cmd = NULL,  *cmd2 = NULL;
      Octstr *data = NULL;
      int mtype, num_fetches;
      char *uname, *rpath, *sname, *rid, *qid, *xmtype;
      void *msg = NULL;
 
+     const char *pvals[20] = {NULL};
+     int plens[20] = {0};
+     int pfrmt[20] = {0};
+     int nargs, nargs2;
+
+     sprintf(tmp1, "%lld", ri->uid);     
      
-     PQ_ESCAPE_STR(ri->c, octstr_get_cstr(ri->clientid), tmp1);
-     sprintf(cmd, "SELECT msg_type, msg_data,internal_rcpt_struct_path, full_userid, screen_name, rid, id,num_fetches "
-	     " FROM csp_message_recipients_view WHERE userid = %lld AND "
-	     " (clientid IS NULL OR clientid = '' OR clientid = '%.128s') AND msg_status IN ('N','F') and edate > current_timestamp "
-	     " AND next_fetch <= current_timestamp "
-	     "  ORDER BY rid ASC,msg_status ASC LIMIT 1",
-	     ri->uid, tmp1); /* we don't lock here, but below we try to detect if message gets fetched again. */
-     r = PQexec(ri->c, cmd);
+     pvals[0] = octstr_get_cstr(ri->clientid);
+     pvals[1] = tmp1;
+
+     r = PQexecParams(ri->c, "SELECT msg_type, msg_data,internal_rcpt_struct_path, full_userid, screen_name, rid, id,num_fetches "
+		      " FROM csp_message_recipients_view WHERE userid = $2 AND "
+		      " (clientid IS NULL OR clientid = '' OR clientid = $1) AND msg_status IN ('N','F') and edate > current_timestamp "
+		      " AND next_fetch <= current_timestamp "
+		      "  ORDER BY rid ASC,msg_status ASC LIMIT 1",
+		      2, NULL, pvals, plens, pfrmt, 0);
+		      /* we don't lock here, but below we try to detect if message gets fetched again. */
 
      if (PQresultStatus(r) != PGRES_TUPLES_OK || PQntuples(r) < 1)
 	  goto done;
@@ -1376,9 +1419,10 @@ void *get_pending_msg(RequestInfo_t *ri)
 	  PGresult *r;
 	  error(0, "Failed to parse msg in csp queue id [%s] of type [%s] for recipient [%s]"
 		" Further delivery attempts disabled", qid, xmtype, uname && uname[0] ? uname : sname);
-	  
-     	  sprintf(cmd, "UPDATE  csp_message_recipients  SET msg_status = 'R'  WHERE id = %s ", rid);  
-	  r = PQexec(ri->c, cmd);
+
+	  pvals[0] = rid;
+     	  r = PQexecParams(ri->c, "UPDATE  csp_message_recipients  SET msg_status = 'R'  WHERE id = $1 ", 1, NULL, pvals, plens, pfrmt, 0);  
+
 	  PQclear(r);
 	  goto done;
      }
@@ -1418,19 +1462,26 @@ void *get_pending_msg(RequestInfo_t *ri)
 	       mtype = Imps_MessageNotification;
 	  } else
 	       make_msg_data(nm->minfo, &nm->data, ri->binary);	       
-
+	  sprintf(tmp1, "%ld secs", (long)2*ri->conf->min_ttl);
+	  pvals[0] = rid;
+	  pvals[1] = tmp1;
 	  /* mark the message as fetched, check if it is still not yet fetched */
-	  sprintf(cmd, "UPDATE csp_message_recipients SET msg_status = 'F',num_fetches = num_fetches + 1,"
-		  " next_fetch = current_timestamp + '%ld secs'::interval "
-		  " WHERE id = %s AND next_fetch < current_timestamp "
-		  " RETURNING id",  (long)2*ri->conf->min_ttl, rid);
-	  cmd2[0] = 0; 
+	  cmd = "UPDATE csp_message_recipients SET msg_status = 'F',num_fetches = num_fetches + 1,"
+		  " next_fetch = current_timestamp + $2::interval "
+	       " WHERE id = $1 AND next_fetch < current_timestamp "
+	       " RETURNING id";
+	  nargs  = 2;
+	  cmd2 = NULL; 
+	  nargs2 = 0;
      } else  {       
-     	  sprintf(cmd, "DELETE FROM csp_message_recipients  WHERE id = %s RETURNING id ",
-		  rid);  /* consider the message delivered, remove it.. */
-	  sprintf(cmd2, " DELETE FROM csp_message_queue WHERE id = %s AND NOT "
-		  " EXISTS (SELECT id FROM csp_message_recipients WHERE messageid=%s) ",
-		  qid, qid);
+	  pvals[0] = rid;
+     	  cmd =  "DELETE FROM csp_message_recipients  WHERE id = $1 RETURNING id ";  /* consider the message delivered, remove it.. */
+	  nargs = 1;
+	  
+	  pvals[5] = qid; /* offset ! */
+	  cmd2 =  " DELETE FROM csp_message_queue WHERE id = $1 AND NOT "
+		  " EXISTS (SELECT id FROM csp_message_recipients WHERE messageid=$1) ";
+	  nargs2 = 1;
      }
      
      if (mtype == Imps_PresenceNotification_Request) {
@@ -1475,7 +1526,7 @@ void *get_pending_msg(RequestInfo_t *ri)
      }
      
      
-     r2 = PQexec(ri->c, cmd);
+     r2 = PQexecParams(ri->c, cmd,  nargs, NULL, pvals, plens, pfrmt, 0);  
      if (PQresultStatus(r2) !=  PGRES_TUPLES_OK || PQntuples(r2) < 1) { 
         /* message was delivered in the meantime to a parallel session.*/
 	  info(0, "Parallel fetch of message for %s [rid=%d, type=%s]", 
@@ -1485,8 +1536,8 @@ void *get_pending_msg(RequestInfo_t *ri)
      }
      PQclear(r2);
 
-     if (cmd2[0]) {
-	  r2 = PQexec(ri->c, cmd2);
+     if (cmd2) {
+	  r2 = PQexecParams(ri->c, cmd2, nargs2, NULL, pvals + 5, NULL, NULL,  0);
 	  PQclear(r2);
      }
      

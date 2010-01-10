@@ -54,15 +54,16 @@ SELECT 'wv:'|| (case when domain = '' then userid else userid || '@' || domain e
 
 
 CREATE TABLE sessions (
- id bigserial PRIMARY KEY,
+  id bigserial PRIMARY KEY,
 
- userid bigint REFERENCES users ON DELETE CASCADE ON UPDATE CASCADE,
- clientid text NOT NULL DEFAULT '', -- includes app ID if any
- sessionid text,
+  userid bigint REFERENCES users ON DELETE CASCADE ON UPDATE CASCADE,
+  clientid text NOT NULL DEFAULT '', -- includes app ID if any
+  sessionid text,
 
+  full_userid text NOT NULL,
   
  -- More fields -- capabilities
-   csp_version varchar(16) NOT NULL DEFAULT '1.0',
+   csp_version varchar(16) NOT NULL DEFAULT '1.2',
    pull_len int NOT NULL DEFAULT 100000,
    push_len int NOT NULL DEFAULT 100000,
    text_len int NOT NULL DEFAULT 100000,
@@ -95,6 +96,33 @@ CREATE TABLE sessions (
    UNIQUE(sessionid)
 );
  
+-- trigger to update fulluserid
+
+CREATE OR REPLACE FUNCTION sess_before_update() RETURNS trigger AS $$
+       BEGIN
+	  NEW.full_userid := '';
+
+	  SELECT full_userid INTO NEW.full_userid FROM users_view uv WHERE uv.id = NEW.userid;
+
+	  RETURN NEW;
+       END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER sess_before_update BEFORE UPDATE OR INSERT ON sessions 
+       FOR EACH ROW EXECUTE PROCEDURE sess_before_update();
+
+CREATE OR REPLACE FUNCTION sess_before_insert() RETURNS trigger AS $$
+       BEGIN
+	 NEW.sessionid := '';
+
+	 SELECT upper(md5(current_timestamp::text)) || NEW.id::text || 'G' INTO NEW.sessionid;
+	 RETURN NEW;
+       END;       
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER sess_before_insert BEFORE INSERT ON sessions 
+       FOR EACH ROW EXECUTE PROCEDURE sess_before_insert();
+
 
 -- groups table
 CREATE TABLE groups (

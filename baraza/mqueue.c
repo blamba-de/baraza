@@ -37,16 +37,16 @@ int64_t queue_foreign_msg_add(PGconn *c, void *msg, Sender_t sender,
      Octstr *sstr  = make_sender_str(sender);
      
      time_t tnow = time(NULL);
-     char *xdata, tmp1[128], tmp2[128], tmp3[128+4], tmp4[128+2], tmp5[64];
-     size_t dlen;
-     Octstr *cmd;
+     char tmp1[128], tmp4[128+2], tmp5[64];
+
      int64_t mid;
      PGresult *r;
-     
+     const char *pvals[20] = {NULL};
+     int plens[20] = {0};
+     int pfrmt[20] = {0};
      
      gw_assert(msg);
      
-
 
      type = CSP_MSG_TYPE(msg);
      name = (void *)csp_obj_name(type);
@@ -55,40 +55,36 @@ int64_t queue_foreign_msg_add(PGconn *c, void *msg, Sender_t sender,
      gw_assert(out);
 
      
-
      /* fix expiry time */
      if (expiryt  <= tnow + config->min_ttl)
 	  expiryt = tnow + DEFAULT_EXPIRY;
+     sprintf(tmp1, "%ld secs", expiryt);
+     pvals[0] = tmp1;
+     pvals[1] = octstr_get_cstr(sstr);
+     pvals[2] = domain; /* will lower case it using Db */
+     pvals[3] = name;
      
-     PQ_ESCAPE_STR(c, octstr_get_cstr(sstr), tmp1);
-     PQ_ESCAPE_STR_LOWER(c, domain, tmp2);
+     pvals[4] = octstr_get_cstr(out);
+     pfrmt[4] = 1;
+     plens[4] = octstr_len(out);
      
-     xdata = (void *)PQescapeBytea((void *)octstr_get_cstr(out), octstr_len(out), &dlen);
-     
-     if (msgid)
-	  sprintf(tmp3, "'%.128s'", octstr_get_cstr(msgid));
-     else 
-	  sprintf(tmp3, "NULL");
-     
-     if (clientid) {
-	  char tmp[128];
-	  PQ_ESCAPE_STR(c, clientid, tmp);
-	  sprintf(tmp4, "'%.128s'", tmp);
-     } else 
-	  sprintf(tmp4, "NULL");
+     pvals[5] = msgid ? octstr_get_cstr(msgid) : NULL;
 
-     if (sender_uid >= 0)
-	  sprintf(tmp5, "%lld", sender_uid);
-     else 
-	  sprintf(tmp5, "NULL");
-
-     cmd = octstr_format("INSERT INTO ssp_message_queue (edate, sender, domain, msg_type,msg_data, "
-			 "msgid, userid, clientid, csp_ver) "
-			 " VALUES ('epoch'::timestamp with time zone + '%ld secs'::interval, "
-			 " '%.128s', '%.128s', '%.64s', E'%s'::bytea, %s, %s, %s, %d) RETURNING id",
-			 expiryt, tmp1, tmp2, name, xdata, tmp3, tmp5, tmp4, csp_ver);
+     sprintf(tmp5, "%lld", sender_uid);
+          
+     pvals[6] = (sender_uid >= 0) ? tmp5 : NULL;
+     pvals[7] = clientid;
      
-     r = PQexec(c, octstr_get_cstr(cmd));     
+     sprintf(tmp4, "%d", csp_ver);
+     pvals[8] = tmp4;
+
+     
+     r = PQexecParams(c, "INSERT INTO ssp_message_queue (edate, sender, domain, msg_type,msg_data, "
+		      "msgid, userid, clientid, csp_ver) "
+		      " VALUES ('epoch'::timestamp with time zone + ($1::text)::interval, "
+		      " $2, lower($3), $4, $5, $6, $7, $8, $9) RETURNING id",
+		      9, NULL, pvals, plens, pfrmt, 0);
+
      if (PQresultStatus(r) != PGRES_TUPLES_OK || PQntuples(r) < 1) {
 	  error(0, "failed to (ssp)queue message type [%s] from [%.128s]: %s",
 		name, octstr_get_cstr(sstr), PQerrorMessage(c));
@@ -100,11 +96,14 @@ int64_t queue_foreign_msg_add(PGconn *c, void *msg, Sender_t sender,
 	  void *x;
 	  char *ssp_id = PQgetvalue(r, 0, 0);
 
+	  mid = strtoull(ssp_id, NULL, 10);
 	  
-	  mid = strtoull(ssp_id, NULL, 10);	  
+	  pvals[0] = ssp_id;
+	  plens[0] = 0;
+	  pfrmt[0] = 0;
+
 	  for (i = 0, n = gwlist_len(dest_userids); i<n;i++) 
 	       if ((x = gwlist_get(dest_userids, i)) != NULL) {
-		    char cmd[512];
 		    Octstr *clid;
 		    PGresult *r2;
 
@@ -118,11 +117,19 @@ int64_t queue_foreign_msg_add(PGconn *c, void *msg, Sender_t sender,
 			 clid = make_clientid(xu->u.typ == Imps_ClientID ? xu->u.val : NULL,
 					      xu->u.typ == Imps_ApplicationID ? xu->u.val : NULL);	 
 		    }
-		    PQ_ESCAPE_STR_LOWER(c, u ? (char *)u->str : "", tmp1);
-		    PQ_ESCAPE_STR(c, (char *)octstr_get_cstr(clid), tmp2);
-		    sprintf(cmd, "INSERT INTO ssp_message_recipients (messageid, foreign_userid, clientid) "
-			    " VALUES (%lld, '%.128s', '%.128s')", mid, tmp1, tmp2);
-		    r2 = PQexec(c, cmd);
+		    
+
+		    pvals[1] = u ? (char *)u->str : "";
+		    plens[1] = 0;
+		    pfrmt[1] = 0;
+
+		    pvals[2] = octstr_get_cstr(clid);
+		    plens[2] = 0;
+		    pfrmt[2] = 0;
+		    
+		    r2 = PQexecParams(c, "INSERT INTO ssp_message_recipients (messageid, foreign_userid, clientid) "
+				      " VALUES ($1, lower($2),$3)", 
+				      3, NULL, pvals, plens, pfrmt, 0);
 		    PQclear(r2);
 
 		    octstr_destroy(clid);
@@ -133,8 +140,6 @@ int64_t queue_foreign_msg_add(PGconn *c, void *msg, Sender_t sender,
 
      
      octstr_destroy(sstr);
-     octstr_destroy(cmd);
-     PQfreemem(xdata);
      octstr_destroy(out);
      
      return mid;     
@@ -152,13 +157,14 @@ int64_t queue_local_msg_add(PGconn *c, void *msg, Sender_t sender,
      char *name;
      Octstr *sstr = make_sender_str(sender);
      time_t tnow = time(NULL);
-     char *xdata, tmp1[128+4], tmp3[128+4];
+     char tmp1[128+4], xmid[128];
      int i;
-     size_t dlen;
-     Octstr *cmd;
      int64_t mid;
      PGresult *r;
      int type;
+     const char *pvals[20] = {NULL};
+     int plens[20] = {0};
+     int pfrmt[20] = {0};
 
 
      gw_assert(msg);
@@ -173,25 +179,26 @@ int64_t queue_local_msg_add(PGconn *c, void *msg, Sender_t sender,
      if (expiryt < tnow + config->min_ttl)
 	  expiryt = tnow + DEFAULT_EXPIRY;
 
+     sprintf(tmp1, "%ld secs", expiryt);
+     pvals[0] = tmp1;
+     pvals[1] = octstr_get_cstr(sstr);
+     pvals[2] = name;
 
-     PQ_ESCAPE_STR(c, octstr_get_cstr(sstr), tmp1);
-
-     xdata = (void *)PQescapeBytea((void *)octstr_get_cstr(out), octstr_len(out), &dlen);
+     pvals[3] = octstr_get_cstr(out);
+     pfrmt[3] = 1;
+     plens[3] = octstr_len(out);
      
-     if (msgid)
-	  sprintf(tmp3, "'%.128s'", octstr_get_cstr(msgid));
-     else 
-	  sprintf(tmp3, "NULL");
-
-     cmd = octstr_format("INSERT INTO csp_message_queue (edate, sender, msg_type,msg_data, delivery_report, "
-			 "internal_rcpt_struct_path, msgid) "
-			 " VALUES ('epoch'::timestamp with time zone + '%ld secs'::interval, "
-			 " '%.128s', '%.64s', E'%s'::bytea, %s, '%s', %s) RETURNING id",
-			 expiryt, tmp1, name, xdata, dlr ? "true" : "false",
-			 rcpt_struct_path ? rcpt_struct_path : "", /* XXX we trust this one since it is internal. */
-			 tmp3);
+     pvals[4] = dlr ? "true" : "false";
+     pvals[5] = rcpt_struct_path ? rcpt_struct_path : "";
+     pvals[6] = msgid ? octstr_get_cstr(msgid) : NULL;
      
-     r = PQexec(c, octstr_get_cstr(cmd));     
+
+     r = PQexecParams(c, "INSERT INTO csp_message_queue (edate, sender, msg_type,msg_data, delivery_report, "
+		      "internal_rcpt_struct_path, msgid) "
+		      " VALUES ('epoch'::timestamp with time zone + ($1::text)::interval, "
+		      " $2, $3, $4, $5, $6, $7) RETURNING id",
+		      7, NULL, pvals, plens, pfrmt, 0);
+     
      if (PQresultStatus(r) != PGRES_TUPLES_OK || PQntuples(r) < 1) {
 	  error(0, "failed to queue message type [%s] from [%.128s]: %s",
 		name, octstr_get_cstr(sstr), PQerrorMessage(c));
@@ -201,23 +208,29 @@ int64_t queue_local_msg_add(PGconn *c, void *msg, Sender_t sender,
 	  goto done;
      }
      
-     mid = strtoull(PQgetvalue(r, 0, 0), NULL, 10);
+     strncpy(xmid, PQgetvalue(r, 0, 0), sizeof xmid);
+     mid = strtoull(xmid, NULL, 10);
      PQclear(r);
      
      /* Now write the queue entries. */
-
+     pvals[0] = xmid;
+     pfrmt[1] = pfrmt[2] = pfrmt[3] = 0;
      for (i = 0; i<num; i++) {
 	  u_int64_t uid = localids[i].uid;
 	  char *clid = localids[i].clientid;
-	  char tmp2[256], cmd[512];
+	  char tmp2[256];
 	  char *sname = localids[i].sname;
 	  
-	  PQ_ESCAPE_STR(c, clid, tmp1);
-	  PQ_ESCAPE_STR(c, sname, tmp2);
+	  sprintf(tmp2, "%lld", uid);
 	  
-	  sprintf(cmd, "INSERT INTO csp_message_recipients (messageid, userid,clientid,screen_name) VALUES "
-		  " (%lld, %lld, '%.128s', '%.256s')", mid, uid, tmp1, tmp2);
-	  r = PQexec(c, cmd);
+	  pvals[1] = tmp2;
+	  pvals[2] = clid;
+	  pvals[3] = sname;
+	  
+	  r = PQexecParams(c,
+			   "INSERT INTO csp_message_recipients (messageid, userid,clientid,screen_name) VALUES "
+			   " ($1, $2, $3, $4)",
+			   4, NULL, pvals, plens, pfrmt, 0);
 	  
 	  if (PQresultStatus(r) != PGRES_COMMAND_OK) {
 	       error(0, "csp_message_recipients write failed: %s", PQerrorMessage(c));
@@ -225,18 +238,15 @@ int64_t queue_local_msg_add(PGconn *c, void *msg, Sender_t sender,
 	       PQclear(r);
 	       break;
 	  } else {
-	    CIRTarget_t *xcirt = make_cir_target(uid, clid);
-	    pg_cp_on_commit(c, (void *)cir_newmsg, xcirt);
+	       CIRTarget_t *xcirt = make_cir_target(uid, clid);
+	       pg_cp_on_commit(c, (void *)cir_newmsg, xcirt);
 	  }
 	  PQclear(r);
-
      }
      
 
  done:
      octstr_destroy(sstr);
-     octstr_destroy(cmd);
-     PQfreemem(xdata);
      octstr_destroy(out);
 
      return mid;
@@ -282,16 +292,21 @@ Dict *queue_split_rcpt(PGconn *c, struct QSender_t xsender,
 {
      Dict *d = dict_create(7, _csp_msg_free);
      int i, n,  nelems, nalloc = ALLOC_BSIZE, islocal;
-     char tmp1[DEFAULT_BUF_LEN + 1], tmp2[DEFAULT_BUF_LEN + 1], tmp_sender[DEFAULT_BUF_LEN];
-     char xid[DEFAULT_BUF_LEN], xdomain[DEFAULT_BUF_LEN], xclientid[DEFAULT_BUF_LEN + 1];
+     char xid[DEFAULT_BUF_LEN], xdomain[DEFAULT_BUF_LEN];
+     char xuid[DEFAULT_BUF_LEN];
      
-     char cmd[512*2];
      PGresult *r;
      User_t u;
      ContactList_t cl;
      Group_t g;
      struct QLocalUser_t *ulist; /* convenience. */
 
+     const char *pvals[20] = {NULL};
+     int plens[20] = {0};
+     int pfrmt[20] = {0}, nargs = 0;
+     
+
+     
      gw_assert(localids);
      gw_assert(error_list);
      
@@ -300,11 +315,9 @@ Dict *queue_split_rcpt(PGconn *c, struct QSender_t xsender,
      *error_list = gwlist_create();
      
      /* prepare the sender. */
-     if (xsender.type == QForeign_User) 
-	  PQ_ESCAPE_STR(c, xsender.u.fid, tmp_sender);
-          
-     PQ_ESCAPE_STR(c, xsender.clientid, xclientid);
-
+     if (xsender.type == QLocal_User)
+	  sprintf(xuid, "%lld", xsender.u.uid);
+     
      /* first we tackle users (easy ones !) */
 
      for (i = 0, n = to  ? gwlist_len(to->ulist) : 0; i<n; i++)
@@ -313,11 +326,7 @@ Dict *queue_split_rcpt(PGconn *c, struct QSender_t xsender,
 	       char *user = u->user ? u->user->str : (void *)"";
 
 	       extract_id_and_domain(user, xid, xdomain);
-
-	       PQ_ESCAPE_STR_LOWER(c, xid, tmp1);
-	       PQ_ESCAPE_STR_LOWER(c, xdomain, tmp2);
-	       
-	       uid = get_userid(c, tmp1, tmp2, &islocal);
+	       uid = get_userid(c, xid, xdomain, &islocal);
 	       
 	       
 	       if (uid < 0 && islocal) {
@@ -354,25 +363,27 @@ Dict *queue_split_rcpt(PGconn *c, struct QSender_t xsender,
 	       
 	       extract_id_and_domain((void *)cl->str, xid, xdomain);
 	       
-	       PQ_ESCAPE_STR_LOWER(c, xid, tmp1);
-	       PQ_ESCAPE_STR_LOWER(c, xdomain, tmp2);
-
 	       if ((islocal = get_islocal_domain(c, xdomain)) != 0) {
 		    int64_t cid;
-		    char crit[64];
+		    char xcid[128], tmp1[64];
 		    int j, m;
+		    const char *cmd;
+		    pvals[0] = xid;
+		    pvals[1] = xdomain;
 		    
-		    if (xsender.type == QLocal_User)
-			 sprintf(crit, " AND userid = %lld", xsender.u.uid);
-		    else if (xsender.type == QForeign_User) 
-			 sprintf(crit, " AND FALSE"); /* no access to contact lists from non-local users */
+		    nargs = 2;
+		    
+		    if (xsender.type == QLocal_User) {
+			 sprintf(tmp1, "%lld", xsender.u.uid);
+			 pvals[2] = tmp1;
+			 cmd = "SELECT id FROM contactlists WHERE cid=$1 AND domain=$2 AND userid = $3";
+			 nargs++;
+		    } else if (xsender.type == QForeign_User) /* no access to contact lists from non-local users */
+			 cmd = "SELECT id FROM contactlists WHERE cid=$1 AND domain=$2 AND FALSE";
 		    else 
-			 crit[0] = 0;
+			 cmd = "SELECT id FROM contactlists WHERE cid=$1 AND domain=$2";
 		    
-		    sprintf(cmd, "SELECT id FROM contactlists WHERE cid='%.128s' AND domain='%.128s' %s",
-			    tmp1, tmp2, crit);
-		    
-		    r = PQexec(c, cmd);
+		    r = PQexecParams(c, cmd, nargs,NULL, pvals, plens, pfrmt, 0);
 		    
 		    if (PQresultStatus(r) != PGRES_TUPLES_OK || PQntuples(r) < 1) {
 			 Octstr *err = octstr_format("invalid contactlist: %.128s", cl->str);
@@ -388,14 +399,15 @@ Dict *queue_split_rcpt(PGconn *c, struct QSender_t xsender,
 			 PQclear(r);
 			 continue;		    
 		    }
-
-		    cid = strtoull(PQgetvalue(r, 0, 0), NULL, 10);
+		    
+		    strncpy(xcid, PQgetvalue(r, 0, 0), sizeof xcid);
+		    cid = strtoull(xcid, NULL, 10);
 		    PQclear(r);
 
 		    /* Get list members, and build the list. */ 
-		    sprintf(cmd, "SELECT local_userid, foreign_userid, cname FROM contactlist_members" 
-			    " WHERE cid = %lld", cid);
-		    r = PQexec(c, cmd);
+		    pvals[0] = xcid;
+		    r = PQexecParams(c, "SELECT local_userid, foreign_userid, cname FROM contactlist_members" 
+				     " WHERE cid = $1", 1, NULL, pvals, plens, pfrmt, 0);
 
 		    if (PQresultStatus(r) != PGRES_TUPLES_OK || PQntuples(r) < 0) {
 			 error(0, "failed to query for list elements: %s", PQerrorMessage(c));
@@ -449,7 +461,8 @@ Dict *queue_split_rcpt(PGconn *c, struct QSender_t xsender,
 	       ScreenName_t sname = NULL;
 	       GroupID_t grp = NULL;
 	       char *xsname;
-	       
+	       char xgid[128];
+
 	       if (g->u.typ == Imps_ScreenName) {
 		    sname = g->u.val;
 		    gw_assert(sname->gid);
@@ -464,38 +477,45 @@ Dict *queue_split_rcpt(PGconn *c, struct QSender_t xsender,
 	       /* Get the group ID and  members if local, else pass on responsibility. */
 	       extract_id_and_domain((void *)grp->str, xid, xdomain);
 
-	       PQ_ESCAPE_STR_LOWER(c, xid, tmp1);
-	       PQ_ESCAPE_STR_LOWER(c, xdomain, tmp2);
-	       
-	       if ((islocal = get_islocal_domain(c, tmp2))) {
+	       pvals[0] = xid;
+	       pvals[1] = xdomain;
+	       if ((islocal = get_islocal_domain(c, xdomain))) {
 		    int64_t gid;
-		    char crit[256], crit2[256], seln[256];
+		    const char *cmd;
+		    char crit[256], crit2[256], buf[512];
 		    int j, m;
 		    
 		    crit2[0] = 0;
+		    pvals[3] = xsender.clientid;
 		    if (xsender.type == QLocal_User) { /* must be a joined. */
-			 sprintf(crit, " AND 1 IN (SELECT  1 FROM group_members  WHERE groupid = groups.id AND "
-				 " local_userid = %lld AND isjoined = TRUE)", xsender.u.uid);
+			 pvals[2] = xuid;
+			 nargs = 4;			 
+			 cmd = "SELECT id, "
+			      "(SELECT screen_name FROM group_members gm WHERE gm.groupid = groups.id AND "
+			      " local_userid = $3 AND clientid = $4 LIMIT 1)  AS sname FROM "
+			      " groups WHERE groupid=$1 AND domain=$2 "
+			      " AND EXISTS(SELECT * FROM group_members  WHERE groupid = groups.id AND "
+			      " local_userid = $3 AND isjoined = TRUE)";
+		    
 			 sprintf(crit2, " AND local_userid <> %lld ", xsender.u.uid); /* skip self in broadcast below. */
-			 sprintf(seln, "SELECT screen_name FROM group_members gm WHERE gm.groupid = groups.id AND "
-				 " local_userid = %lld AND clientid = '%.128s'", xsender.u.uid, xclientid);
+
 		    } else if  (xsender.type == QForeign_User)  {
-			 sprintf(crit, " AND 1 IN (SELECT  1 FROM group_members  WHERE groupid = groups.id AND "
-				 " foreign_userid = '%.128s' AND isjoined=TRUE)", tmp_sender);
-			 sprintf(seln, "SELECT screen_name FROM group_members gm WHERE gm.groupid = groups.id AND "
-				 " foreign_userid = '%.128s' AND clientid = '%.128s'", tmp_sender, xclientid);
+			 pvals[2] = xsender.u.fid;
+			 nargs = 4;
+			 cmd = "SELECT id, "
+			      "(SELECT screen_name FROM group_members gm WHERE gm.groupid = groups.id AND "
+			      " foreign_userid = $3 AND clientid = $4 LIMIT 1)  AS sname FROM "
+			      " groups WHERE groupid=$1 AND domain=$2 "
+			      " AND EXISTS(SELECT * FROM group_members  WHERE groupid = groups.id AND "
+			      " foreign_userid = $3 AND isjoined=TRUE)";
 		    } else {			 
-			 crit[0] = 0;
-			 strcpy(seln, "'x'");
+			 cmd = "SELECT id, "
+			      "'x' AS sname FROM "
+			      " groups WHERE groupid=$1 AND domain=$2";
+			 nargs = 2;
 		    }
 		    
-		    sprintf(cmd, "SELECT id, "
-			    " (%s) AS sname "
-			    " FROM groups WHERE groupid='%.128s' AND domain='%.128s' %s",
-			    seln, tmp1, tmp2, crit);
-		    
-		    r = PQexec(c, cmd);
-		    
+		    r = PQexecParams(c, cmd, nargs, NULL, pvals, plens, pfrmt, 0);
 		    if (PQresultStatus(r) != PGRES_TUPLES_OK || PQntuples(r) < 1) {
 			 Octstr *err = octstr_format("invalid group or not joined: %.128s", grp->str);
 			 DetailedResult_t dr = csp_msg_new(DetailedResult, NULL,
@@ -511,7 +531,8 @@ Dict *queue_split_rcpt(PGconn *c, struct QSender_t xsender,
 			 continue;		    
 		    }
 		    
-		    gid = strtoull(PQgetvalue(r, 0, 0), NULL, 10);
+		    strncpy(xgid, PQgetvalue(r, 0, 0), sizeof xgid);
+		    gid = strtoull(xgid, NULL, 10);
 
 		    if (fixed_sender && 
 			(xsname = PQgetvalue(r, 0, 1))  != NULL && xsname[0]) { /* make a sender. */
@@ -530,23 +551,25 @@ Dict *queue_split_rcpt(PGconn *c, struct QSender_t xsender,
 		    PQclear(r);
 		    
 		    /* Get list members or the single recipient and build the list. */ 
+		    pvals[0] = xgid;
+		    nargs = 1;
 		    if (sname) {
-			 char tmp3[128];
 			 
-			 scrname = sname->sname ? sname->sname->str : (void *)"";
-			 PQ_ESCAPE_STR_LOWER(c, scrname, tmp3);			 
-			 sprintf(crit, " AND screen_name='%.128s'", tmp3);
+			 pvals[1] = scrname = sname->sname ? sname->sname->str : (void *)"";
+			 sprintf(crit, " AND screen_name=$2");
+			 nargs++;
 		    } else if (isinvite) /* ... an invite, sent to a group. */
 			 sprintf(crit, " AND member_type IN ('Admin', 'Mod') ");
 		    else 
 			 crit[0] = 0;
 		    
-		    sprintf(cmd, "SELECT local_userid, foreign_userid,screen_name,clientid, "
+		    sprintf(buf, 
+			    "SELECT local_userid, foreign_userid,screen_name,clientid, "
 			    " (SELECT value FROM group_properties gp WHERE gp.groupid = gj.groupid AND item = 'PrivateMessaging') AS priv_msg "
 			    " FROM group_members gj" 
-			    " WHERE groupid = %lld AND isjoined=true %s %s", gid, crit, crit2);
-		    r = PQexec(c, cmd);
-		    
+			    " WHERE groupid = $1 AND isjoined=true %s %s", crit, crit2);
+
+		    r = PQexecParams(c, buf, nargs, NULL, pvals, plens, pfrmt, 0);		    
 		    if (PQresultStatus(r) != PGRES_TUPLES_OK || PQntuples(r) < 0) {
 			 Octstr *err = octstr_format("Group member(s) not found: %.128s", 
 						     scrname ? scrname : "(ALL)");
