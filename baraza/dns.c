@@ -143,8 +143,11 @@ SrvRecord_t dns_find_srv(char *domain, char *service, int *count)
      *count = i;
      
  done:
-
+#ifdef __linux__
+     res_nclose(&res);
+#else
      res_ndestroy(&res);
+#endif
      return resp;
 }
 
