@@ -446,7 +446,7 @@ ListManage_Response_t handle_manage_list(RequestInfo_t *ri, ListManage_Request_t
      ListManage_Response_t resp = NULL;     
      ContactListProperties_t cpresp = NULL;
      List *el = NULL;
-     const char *pvals[0];
+     const char *pvals[10];
      NickList_t nl = NULL;
      int64_t cid;
      PGresult *r;
@@ -502,8 +502,7 @@ ListManage_Response_t handle_manage_list(RequestInfo_t *ri, ListManage_Request_t
 			 sprintf(cmd, "DELETE from contactlist_members WHERE cid = %lld AND local_userid = %lld",
 				 cid, xuid);
 		    else {
-			 sprintf(cmd, "DELETE FROM contactlist_members WHERE cid = %lld AND "
-				 "foreign_userid = $1 || $2 || $3", cid);
+			 sprintf(cmd, "DELETE FROM contactlist_members WHERE cid = %lld AND foreign_userid = $1 || $2 || $3", cid);
 			 pvals[0] = xid;
 			 pvals[1] = xdomain[0] ? "@" : "";
 			 pvals[2] = xdomain;
@@ -557,8 +556,10 @@ ListManage_Response_t handle_manage_list(RequestInfo_t *ri, ListManage_Request_t
 	  if (PQresultStatus(r) != PGRES_TUPLES_OK || PQntuples(r) <= 0) {
 	       DetailedResult_t dr = csp_msg_new(DetailedResult, NULL,
 						 FV(code, 500),
-						 FV(descr, csp_String_from_cstr("Failed to update contact list!",
+						 FV(descr, csp_String_from_cstr("Failed to update contact list!",       
 										Imps_Description)));
+	       if (el == NULL)
+		    el = gwlist_create();
 	       gwlist_append(el, dr);
 	       warning(0, "update of contact list failed for session %s: %s", 
 		       ri->xsessid, PQerrorMessage(c));
@@ -594,6 +595,10 @@ ListManage_Response_t handle_manage_list(RequestInfo_t *ri, ListManage_Request_t
 						      FV(code,500), 
 						      FV(descr, csp_String_from_cstr("Internal Error", 
 										     Imps_Description)));
+
+		    if (el == NULL)
+			 el = gwlist_create();
+		    
 		    gwlist_append(el, rs);
 		    PQclear(r);
 		    goto done;
@@ -619,6 +624,10 @@ ListManage_Response_t handle_manage_list(RequestInfo_t *ri, ListManage_Request_t
 						 FV(code,500), 
 						 FV(descr, csp_String_from_cstr("Internal Error", 
 										Imps_Description)));
+	       
+	       if (el == NULL)
+		    el = gwlist_create();
+	       
 	       gwlist_append(el, rs);
 	       PQclear(r);
 	       goto done;	       
