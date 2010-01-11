@@ -1458,12 +1458,11 @@ static List *xmpp2csp_msg(PGconn *c, iks *node,
 						      FV(rcpt, r),
 						      FV(tdate, time(NULL)),
 						      FV(valid, DEFAULT_EXPIRY));
-
-
+		      
 		    if (xid) 
 			 CSP_MSG_SET_FIELD(minfo, msgid, csp_String_from_cstr(xid, Imps_MessageID));
 		    
-		    octstr_convert_from_html_entities(zz); /* unquote html characters. */
+		    /* octstr_convert_from_html_entities(zz);  unquote html characters. */
 		    res = csp_msg_new(SendMessage_Request, NULL,
 				      FV(msginfo, minfo),
 				      FV(dreport, drep),
@@ -1981,6 +1980,8 @@ static Octstr *csp2xmpp_msg(PGconn *c, void *msg, void *orig_msg, char *from, ch
 	       Recipient_t r = minfo->rcpt;
 	       char *msgid = minfo->msgid ? csp_String_to_cstr(minfo->msgid) : "000";
 	       char *dlr = (err == NULL && sm->dreport) ? "<request xmlns='urn:xmpp:receipts'/>" : "";
+	       xmlDocPtr doc = xmlNewDoc((void *)"1.0"); /* for use in ncoding below */
+	       char *zx;
 
 	       if (minfo->ctype && 
 		   strcasestr(csp_String_to_cstr(minfo->ctype), "text/plain") == NULL)  /* Not text, put to
@@ -1997,7 +1998,13 @@ static Octstr *csp2xmpp_msg(PGconn *c, void *msg, void *orig_msg, char *from, ch
 			 octstr_base64_to_binary(body);
 
 	       }
-	       octstr_convert_to_html_entities(body); /* quote html characters. */	       
+
+	       zx = (void *)xmlEncodeEntitiesReentrant(doc, (void *)octstr_get_cstr(body));
+	       if (zx) {
+		    octstr_destroy(body);
+		    body = octstr_create(zx);
+		    xmlFree(zx);
+	       }
 	       
 	       if (err != NULL) 
 		    res = octstr_format("<message xmlns='jabber:server' "
@@ -2020,6 +2027,8 @@ static Octstr *csp2xmpp_msg(PGconn *c, void *msg, void *orig_msg, char *from, ch
 		    octstr_destroy(x);
 	       }
 	       octstr_destroy(body);
+	       if (doc)
+		    xmlFreeDoc(doc);
 	  }
 	  break;	  
      case Imps_SendMessage_Response:

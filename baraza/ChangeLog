@@ -1,3 +1,5 @@
+2010-01-11 P. A. Bagyenda <bagyenda@dsmagic.com>
+        * Fix coding of characters sent to xmpp servers
 2010-01-10 P. A. Bagyenda <bagyenda@dsmagic.com>
         * Fix: mem leak in dns lookup code
 2010-01-07 P. A. Bagyenda <bagyenda@dsmagic.com>
