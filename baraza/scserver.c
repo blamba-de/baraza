@@ -12,7 +12,7 @@
  */ 
 #include "conf.h"
 #include "scserver.h"
-
+#include "cspim.h"
 
 static long thid;
 static char myhostname[DEFAULT_BUF_LEN], mm_txt[512];
@@ -28,12 +28,17 @@ static void handler_th(void *unused)
      while ((hr = gwlist_consume(sc_requests)) != NULL) {
 	  Octstr *id = http_cgi_variable(hr->cgivars, "i");
 	  Octstr *ckey = http_cgi_variable(hr->cgivars, "d");	  
-	  Octstr *keywd = http_cgi_variable(hr->cgivars, "keywd");	  
+	  Octstr *keywd = http_cgi_variable(hr->cgivars, "keywd");
+	  Octstr *session = http_cgi_variable(hr->cgivars, "session");
+	  Octstr *msgid = http_cgi_variable(hr->cgivars, "message-id");
+
 	  PGconn *c = pg_cp_get_conn();
-	  const char *cmd;
+	  const char *cmd ;
 	  const char *pvals[10];
 	  PGresult *r;
 	  int nargs;
+	  Octstr *ctype = NULL, *content = NULL;
+	  List *rh = http_create_empty_headers();
 	  
 	  info(0, "Request for content ID=%s, key=%s, keyword=%s", 
 	       octstr_get_cstr(id), octstr_get_cstr(ckey), 
@@ -45,33 +50,70 @@ static void handler_th(void *unused)
 	       nargs = 2;
 	       cmd = "SELECT content_type, content,content_encoding FROM shared_content WHERE "
 		 "id = $1 AND content_key = $2";
-	  } else {
+	  } else if (keywd) {
 	       pvals[0] = keywd ? octstr_get_cstr(keywd) : "x";
 	       nargs = 1;
 	       cmd = "SELECT content_type, content,content_encoding FROM shared_content WHERE "
 		    "content_keyword = $1";	  
-	  }
+	  } else if (session && msgid) {
+	       RequestInfo_t _ri = {0, 
+				    .is_ssp = 0,
+				    .c = c
+	       }, *ri = &_ri;
+	       
+	       if (get_session_id(c, octstr_get_cstr(session), ri) == 0) {
+		    GetMessage_Request_t r = csp_msg_new(GetMessage_Request, NULL,
+							  FV(msgid, 
+							     csp_String_from_bstr(msgid,
+										  Imps_MessageID)));
+		    GetMessage_Response_t resp = r ?  handle_get_msg(ri, r) : NULL;
+		    
+		    
+		    if (resp == NULL)
+			 goto end_getmsg;
+		    
+		    make_msg_data(resp->minfo, &resp->data, 1);
+		    
+		    ctype = csp_String_to_bstr(resp->minfo->ctype);
+		    content = csp_String_to_bstr(resp->data);		    		    
+	       end_getmsg:
+		    csp_msg_free(r);		    
+		    csp_msg_free(resp);
 
+		    free_req_info(ri, 0);
+	       }
+	       cmd = NULL;
+	  } else 
+	       cmd = NULL;
+
+	  if (cmd == NULL)
+	       goto loop;
+	  
 	  r = PQexecParams(c, cmd, nargs, NULL, pvals, NULL, NULL, 0);
 	  
-	  if (PQresultStatus(r) != PGRES_TUPLES_OK || PQntuples(r) < 1) 
-	       http_close_client(hr->c);
-	  else {
-	       List *rh = http_create_empty_headers();
-	       Octstr *data = get_bytea_data(r, 0, 1);
+	  if (PQresultStatus(r) == PGRES_TUPLES_OK &&  PQntuples(r) >= 1) {
 	       char *enc = PQgetvalue(r, 0, 2);
-
-	       if (data && enc && strcasecmp(enc, "base64") == 0)
-		    octstr_base64_to_binary(data);
+	       content = get_bytea_data(r, 0, 1);
 	       
-	       http_header_add(rh, "Content-Type", PQgetvalue(r, 0, 0));
+	       if (content && enc && strcasecmp(enc, "base64") == 0)
+		    octstr_base64_to_binary(content);
 	       
-	       http_send_reply(hr->c, HTTP_OK, rh, data ? data : octstr_imm(""));
-	       
-	       http_destroy_headers(rh);
-	       octstr_destroy(data);
+	       ctype = octstr_create(PQgetvalue(r, 0, 0));
 	  }
-	  PQclear(r);
+	  
+	  PQclear(r);	  
+
+     loop:	  
+	  if (content) {
+	       http_header_add(rh, "Content-Type", ctype ? octstr_get_cstr(ctype) : "text/plain");	       
+	       http_send_reply(hr->c, HTTP_OK, rh, content);
+	  } else 
+	       http_send_reply(hr->c, HTTP_NOT_FOUND, rh, NULL);
+	  
+	  http_destroy_headers(rh);
+	  octstr_destroy(content);
+	  octstr_destroy(ctype);
+	  
 	  pg_cp_return_conn(c);
 	  
 	  free_http_request_info(hr);

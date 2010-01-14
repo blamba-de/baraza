@@ -1082,9 +1082,11 @@ int  do_conditional_msg_encoding(String_t *data, int binary, ContentEncoding_t *
 	       Octstr *x = octstr_create_from_data(s, len);
 	       
 	       octstr_base64_to_binary(x);
-	       *data = csp_String_from_bstr(x, typ);
-	       octstr_destroy(x);
 
+	       csp_msg_free(*data);
+	       *data = csp_String_from_bstr(x, typ);
+
+	       octstr_destroy(x);
 	       csp_msg_free(*enc);
 	       *enc = csp_String_from_cstr("None", Imps_ContentEncoding);  /* no more encoding. */
 	  }	  
@@ -1100,12 +1102,23 @@ int  do_conditional_msg_encoding(String_t *data, int binary, ContentEncoding_t *
 	  plain_text = str_isprint(s, len);
 	  x = octstr_create_from_data(s, len);
 	  if (plain_text) {
-	       octstr_convert_to_html_entities(x); /* Kill all non-compliant XML characters. */
+	       xmlDocPtr doc = xmlNewDoc((void *)"1.0"); /* for use in ncoding below */
+               /* Kill all non-compliant XML characters. */
+	       char *zx = (void *)xmlEncodeEntitiesReentrant(doc, (void *)octstr_get_cstr(x));
+
+	       if (zx) {		    
+		    octstr_delete(x, 0, octstr_len(x));
+		    octstr_append_cstr(x, zx);
+		    xmlFree(zx);
+	       }
 	       *enc = csp_String_from_cstr("None", Imps_ContentEncoding);
+	       if (doc)
+		    xmlFreeDoc(doc);
 	  } else {
 	       octstr_binary_to_base64(x);
 	       *enc = csp_String_from_cstr("BASE64", Imps_ContentEncoding);
 	  }
+	  csp_msg_free(*data);
 	  *data = csp_String_from_bstr(x, typ);	       	       
 	  octstr_destroy(x);
      }
