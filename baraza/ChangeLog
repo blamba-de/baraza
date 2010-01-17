@@ -1,3 +1,5 @@
+2010-01-17 P. A. Bagyenda <bagyenda@dsmagic.com>
+	* Minor bug fix in db creation script
 2010-01-14 P. A. Bagyenda <bagyenda@dsmagic.com>
 	* Added Message fetching (via URI) using shared content server
 2010-01-11 P. A. Bagyenda <bagyenda@dsmagic.com>

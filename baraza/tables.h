@@ -1,6 +1,6 @@
 #ifndef __DB_TABLES_INCLUDED__
 #define __DB_TABLES_INCLUDED__
-/* Auto generated at  Fri 8 Jan 2010 13:49:07 EAT  */
+/* Auto generated at  Sun 17 Jan 2010 06:57:29 EAT  */
 static char *table_cmds[] = {
 "-- \n"
 ,
@@ -219,7 +219,7 @@ static char *table_cmds[] = {
 "  	\n"
 ,
 "CREATE VIEW session_users AS \n"
-"	SELECT sessions.*,users_view.full_userid,nickname FROM sessions,users_view WHERE sessions.userid = users_view.id;\n"
+"	SELECT sessions.*,nickname FROM sessions,users_view WHERE sessions.userid = users_view.id;\n"
 ,
 "CREATE TABLE session_content_types (\n"
 "  id bigserial PRIMARY KEY,\n"

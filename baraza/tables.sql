@@ -242,7 +242,7 @@ CREATE TABLE group_session_limits (
 );
   	
 CREATE VIEW session_users AS 
-	SELECT sessions.*,users_view.full_userid,nickname FROM sessions,users_view WHERE sessions.userid = users_view.id;
+	SELECT sessions.*,nickname FROM sessions,users_view WHERE sessions.userid = users_view.id;
 
 CREATE TABLE session_content_types (
   id bigserial PRIMARY KEY,
