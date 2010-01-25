@@ -320,6 +320,7 @@ static void cir_processor(Connection *conn, struct TCPCIRInfo_t *data)
 	  info(0, "CIR: session being destroyed [ip=%s, sessid=%s]", 
 	       data ? data->ip : "(none)",
 	       data ? data->sessid : "(none)");
+	  conn_unregister(conn);
 	  conn_destroy(conn); /* destroy it and go. */
 	  goto done;
      } else if (line == NULL) 
@@ -365,9 +366,10 @@ static void cir_processor(Connection *conn, struct TCPCIRInfo_t *data)
 	  conn_write(conn, octstr_imm("OK\r\n")); /* always reply with OK. */
 	  if (cir_req)
 	       conn_write(conn, cir_req);
-     } else 
+     } else {
+	  conn_unregister(conn);
 	  conn_destroy(conn);	  /* no connection, or error: close it. */
-     
+     }
 done:
      octstr_destroy(line);     
      octstr_destroy(cir_req);
