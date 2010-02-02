@@ -69,6 +69,10 @@ struct imps_conf_t {
      int use_request_ip;
      unsigned long min_ttl, max_ttl; /* min and max Time-to-live */
      enum cir_methods_t {CIR_NONE=0, CIR_WAPSMS, CIR_WAPUDP, CIR_SUDP} cir_methods[MAXLIST];
+
+     /* additionals */
+     char webroot[256]; /* Web root, for when Baraza web server is used */     
+     char mime_types_file[256]; /* Location of mime types file */
 };
 
 extern char test_pfile[128], test_logdir[128];

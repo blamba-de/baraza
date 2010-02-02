@@ -1,3 +1,8 @@
+2010-02-02 P. A. Bagyenda <bagyenda@dsmagic.com>
+	* Shared content server can now read and returns local files
+	*  via HTTP. Just set web-root conf param, and mime-types
+	*  to point to a mime.types file with mappings of file extensions
+	*  to content types	
 2010-01-25 P. A. Bagyenda <bagyenda@dsmagic.com>
         * Minor fixes to csp module to prevent crash on EOF
 2010-01-17 P. A. Bagyenda <bagyenda@dsmagic.com>

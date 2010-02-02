@@ -16,8 +16,32 @@
 
 static long thid;
 static char myhostname[DEFAULT_BUF_LEN], mm_txt[512];
+static char webroot[256];
 static int sc_ssl, sc_port;
 List *sc_requests;
+static Dict *mime_types; /* Indexed by file extension, value is mime type */
+
+static const char *get_file_ctype(char *fname)
+{
+     char *p;
+     
+     gw_assert(mime_types);
+     
+     /* start with the longest extension and look for the type, and keep looking for smaller extensions 
+      * each time. If all else fails, return default type 
+      */
+     for (p = strchr(fname, '.'); p != NULL; p = strchr(p + 1, '.')) {
+	  Octstr *x = octstr_create(p + 1);
+	  Octstr *y = dict_get(mime_types, x);
+	  
+	  octstr_destroy(x);
+
+	  if (y)
+	       return octstr_get_cstr(y);
+     }
+     return "application/octet-stream";
+}
+
 
 static void handler_th(void *unused)
 {
@@ -83,8 +107,16 @@ static void handler_th(void *unused)
 		    free_req_info(ri, 0);
 	       }
 	       cmd = NULL;
-	  } else 
-	       cmd = NULL;
+	  } else { 
+	       /* Use the URI */
+	       Octstr *fname = octstr_format("%s/%S", webroot, hr->uri);
+	       
+	       content = octstr_read_file(octstr_get_cstr(fname)); /* Might fail. Then below we return 404 */
+	       ctype = octstr_create(get_file_ctype(octstr_get_cstr(fname)));
+	       	       
+	       cmd = NULL; /* So we don't bother with DB update */
+	       octstr_destroy(fname);
+	  }
 
 	  if (cmd == NULL)
 	       goto loop;
@@ -122,6 +154,64 @@ static void handler_th(void *unused)
      info(0, "Stopping Shared Content HTTP server");
 }
 
+static void init_mime_info(char *file)
+{
+     List *l;
+     Octstr *x, *y;
+     if (mime_types != NULL)
+	  return;
+     
+     mime_types = dict_create(107, (void *)octstr_destroy);
+     
+     x = octstr_read_file(file);
+     
+     if (x == NULL)
+	  return;
+          
+     l = octstr_split(x, octstr_imm("\n"));
+     octstr_destroy(x);
+     
+     while ((y = gwlist_extract_first(l)) != NULL) {
+	  List *r  = NULL;
+	  Octstr *ctype = NULL, *ext;
+	  if (octstr_get_char(y, 0) == '#') /* A comment */
+	       goto loop;
+
+	  /* Now split into words. First word is the type, all the rest are extensions */
+	  
+	  if ((r = octstr_split_words(y)) == NULL ||
+	      gwlist_len(r) == 0)
+	       goto loop;
+	  
+	  ctype = gwlist_extract_first(r);
+	  octstr_strip_blanks(ctype);
+	  if (octstr_len(ctype) == 0)
+	       goto loop;
+	  
+	  while ((ext = gwlist_extract_first(r)) != NULL) {
+	       octstr_strip_blanks(ext);
+	       
+	       if (octstr_len(ext) > 0)
+		    dict_put(mime_types, ext, octstr_duplicate(ctype));
+	       
+	       octstr_destroy(ext);
+	  }
+	  
+     loop:
+	  octstr_destroy(y);
+	  octstr_destroy(ctype);
+	  gwlist_destroy(r, (void *)octstr_destroy);
+     }
+
+     gwlist_destroy(l, (void *)octstr_destroy);
+}
+
+static void clear_mime_info(void)
+{
+     dict_destroy(mime_types);
+     mime_types = NULL;
+}
+
 int sc_init_server(struct imps_conf_t *config)
 {
 
@@ -132,14 +222,18 @@ int sc_init_server(struct imps_conf_t *config)
      strncpy(myhostname, this_host, sizeof myhostname);
 
      strncpy(mm_txt, config->mm_txt, sizeof mm_txt);
-
+     strncpy(webroot, config->webroot, sizeof webroot);
+     init_mime_info(config->mime_types_file);
+     
      thid = gwthread_create((gwthread_func_t *)handler_th, NULL);
 
      return 0;
 }
+
 void sc_shutdown_server(void)
 {     
      gwthread_join_every((void *)handler_th);
+     clear_mime_info();
 }
 
 Octstr *sc_add_content(PGconn *c, char *ctype, char *enc, char *data, long dsize)

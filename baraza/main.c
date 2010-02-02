@@ -123,7 +123,9 @@ int main(int argc, char *argv[])
      }
      
      signal(SIGTERM, quit_now);
-     
+     signal(SIGINT, quit_now);
+     signal(SIGPIPE,SIG_IGN); /* Ignore pipe errors. They kill us sometimes for nothing*/
+
      if (test_pfile[0]) 
 	  handle_parse(octstr_read_file(test_pfile));
      
@@ -234,6 +236,7 @@ int main(int argc, char *argv[])
 
      gwthread_join(cleanup_th);     
      
+     gwlib_shutdown();
      info(0, "Shutdown complete... ");
      return 0;
 }

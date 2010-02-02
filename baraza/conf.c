@@ -75,7 +75,11 @@ struct imps_conf_t * readconfig(char *conffile)
 #endif
 static int conf_init(struct imps_conf_t * config)
 {
+     struct stat st;     
      time_t t = time(NULL);
+     int i;
+     const char *mfiles[] = {"/etc/mime.types", "/etc/apache2/mime.types", "/etc/httpd/mime.types", NULL};
+     
      memset(config, 0, sizeof config);
      
      strncpy(config->dbhost, "localhost", sizeof config->dbhost);
@@ -96,6 +100,14 @@ static int conf_init(struct imps_conf_t * config)
      config->min_ttl = MIN_TTL;
      config->max_ttl = MAX_TTL;
 
+     strcpy(config->webroot, "/tmp");  /* Set to whatever */
+     
+     for (i = 0; mfiles[i]; i++)
+	  if (stat(mfiles[i], &st) == 0) {
+	       strncpy(config->mime_types_file, mfiles[i], sizeof config->mime_types_file);
+	       break;
+	  }
+     
      config->num_threads = MIN_THREADS;
      return 0;
 }
@@ -150,6 +162,9 @@ int parse_conf(FILE *f, struct imps_conf_t *config)
 		    for (p = strtok_r(value, ",", &q); p; p= strtok_r(NULL, ",", &q))
 			 strncpy(config->ip_headers[i++], strip_space(p), sizeof config->ip_headers[0]);
 	       }
+	       break;
+	  case 'w':
+	       strncpy(config->webroot, value, sizeof config->webroot);
 	       break;
 	  case 'h': /* host: database host or http_port */
 	       if (strcasecmp(field, "host") == 0) 
@@ -257,7 +272,12 @@ int parse_conf(FILE *f, struct imps_conf_t *config)
 		    config->min_ttl = atoi(value);
 	       else if (strcasecmp(field, "max-ttl") == 0) 
 		    config->max_ttl = atoi(value);
-	       else {
+	       else if (strcasestr(field, "mime-types") != NULL) {
+		    struct stat st;
+		    if (stat(value, &st) != 0) 
+			 panic(0, "MIME types file %s does not exist!", value);
+		    strncpy(config->mime_types_file, value, sizeof config->mime_types_file);
+	       } else  {
 		    config->num_threads = atoi(value);
 		    if (config->num_threads < MIN_THREADS)
 			 config->num_threads = MIN_THREADS;
