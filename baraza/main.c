@@ -236,8 +236,9 @@ int main(int argc, char *argv[])
 
      gwthread_join(cleanup_th);     
      
-     gwlib_shutdown();
      info(0, "Shutdown complete... ");
+
+     gwlib_shutdown();
      return 0;
 }
 
