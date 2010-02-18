@@ -1,3 +1,5 @@
+2010-02-18 P. A. Bagyenda <bagyenda@dsmagic.com>
+	* Added form-based posting for message sending
 2010-02-02 P. A. Bagyenda <bagyenda@dsmagic.com>
 	* Shared content server can now read and returns local files
 	*  via HTTP. Just set web-root conf param, and mime-types

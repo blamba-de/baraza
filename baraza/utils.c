@@ -419,6 +419,82 @@ Sender_t parse_sender_str(char *in)
 }
 
 
+Recipient_t parse_recipient_str(char *in)
+{
+     char *p, buf[256];
+     Recipient_t val;
+     
+     if (in == NULL || in[0] == 0) 
+	  return NULL;
+     
+     if ((p = strstr(in, "User=")) == in) { /* A user. */
+	  User_t u = csp_msg_new(User, NULL, NULL);
+	  
+	  p += strlen("User=");	  
+	  GET_PARAM(buf,p);
+	  CSP_MSG_SET_FIELD(u, user, csp_String_from_cstr(buf, Imps_UserID));	  
+	  if (strstr(p, "FriendlyName=") == p) {
+	       p += strlen("FriendlyName=");
+	       GET_PARAM(buf,p);
+	       CSP_MSG_SET_FIELD(u, fname, csp_String_from_cstr(buf, Imps_FriendlyName));       
+	  }
+	  
+	  /* skip over the client part. */
+	  if (strstr(p, "Client=") == p) {
+	       ClientID_t _c = NULL; 
+	       ApplicationID_t _a = NULL;
+	       Octstr *x;
+	       int type; 
+	       void *val;
+	       
+	       p += strlen("Client=");
+
+	       x = octstr_create(p);
+	       parse_clientid(x, &_c, &_a);
+	       octstr_destroy(x);
+	       
+	       type = _c ? Imps_ClientID : Imps_ApplicationID;
+	       val = _c ? _c : (void *)_a;	       
+	       csp_msg_set_union_field_value(u, csp_get_field_num(u, "u"), type, val);
+	  }
+	  val = csp_msg_new(Recipient, NULL,
+			    FV(ulist, gwlist_create_ex(u)));	  
+     } else if ((p = strstr(in, "Group=")) == in) { /* A group with a screen name. */
+	  Group_t g;	
+	  GroupID_t grp;
+
+	  p += strlen("Group=");
+	  GET_PARAM(buf,p);
+	  grp = csp_String_from_cstr(buf, Imps_GroupID);
+	  
+	  if (strstr(p, "ScreenName=") == p) {	 
+	       ScreenName_t sname;
+	       GET_PARAM(buf,p);
+	       
+	       sname = csp_msg_new(ScreenName, NULL,
+				   FV(sname, csp_String_from_cstr(buf, Imps_SName)),
+				   FV(gid, grp));
+	       g = csp_msg_new(Group, NULL, 
+			       UFV(u, Imps_ScreenName, sname));
+	  } else 
+	       g = csp_msg_new(Group, NULL, 
+			       UFV(u, Imps_GroupID, grp));
+	  val  = csp_msg_new(Recipient, NULL,
+			     FV(glist, gwlist_create_ex(g)));	  
+     } else if ((p = strstr(in, "ContactList=")) == in) { /* A contact list. */
+	  ContactList_t c;
+	  p += strlen("ContactList=");
+	  GET_PARAM(buf, p);
+	  
+	  c = csp_String_from_cstr(buf, Imps_ContactList);
+	  val  = csp_msg_new(Recipient, NULL,
+			     FV(clist, gwlist_create_ex(c)));	  	  
+     } else 
+	  return NULL; /* Badly formatted! */
+
+     return val;
+}
+
 ScreenName_t parse_screen_name(char *in)
 {
      char sname[DEFAULT_BUF_LEN], gid[DEFAULT_BUF_LEN];
@@ -2045,6 +2121,122 @@ static Octstr *make_url(HTTPURLParse *h)
      if (h->fragment)
 	  octstr_format_append(url, "#%S", h->fragment);
      return url;
+}
+
+int parse_cgivars(List *request_headers, Octstr *request_body,
+                  List **cgivars, List **cgivar_ctypes)
+{
+     Octstr *ctype = NULL, *charset = NULL; 
+     int ret = 0;
+     
+     if (request_body == NULL || 
+         octstr_len(request_body) == 0 || cgivars == NULL)
+          return 0; /* Nothing to do, this is a normal GET request. */
+     
+     http_header_get_content_type(request_headers, &ctype, &charset);
+
+     if (*cgivars == NULL)
+          *cgivars = gwlist_create();
+
+     if (*cgivar_ctypes == NULL)
+          *cgivar_ctypes = gwlist_create();
+
+     if (!ctype) {
+          warning(0, "Parse CGI Vars: Missing Content Type!");
+          ret = -1;
+          goto done;
+     }
+
+     if (octstr_case_compare(ctype, octstr_imm("application/x-www-form-urlencoded")) == 0) {
+          /* This is a normal POST form */
+          List *l = octstr_split(request_body, octstr_imm("&"));
+          Octstr *v;
+
+          while ((v = gwlist_extract_first(l)) != NULL) {
+               List *r = octstr_split(v, octstr_imm("="));
+               
+               if (gwlist_len(r) == 0)
+                    warning(0, "Parse CGI Vars: Missing CGI var name/value in POST data: %s",
+                            octstr_get_cstr(request_body));
+               else {
+                    HTTPCGIVar *x = gw_malloc(sizeof *x);
+                    x->name =  gwlist_extract_first(r);
+                    x->value = gwlist_extract_first(r);
+                    if (!x->value)
+                         x->value = octstr_create("");
+                
+                    octstr_strip_blanks(x->name);
+                    octstr_strip_blanks(x->value);
+                    
+                    octstr_url_decode(x->name);
+                    octstr_url_decode(x->value);
+                    
+                    gwlist_append(*cgivars, x);
+               }
+               octstr_destroy(v);
+               gwlist_destroy(r, octstr_destroy_item);
+          }
+          gwlist_destroy(l, NULL);
+     } else if (octstr_case_compare(ctype, octstr_imm("multipart/form-data")) == 0) {
+          /* multi-part form data */
+          MIMEEntity *m = mime_http_to_entity(request_headers, request_body);
+          int i, n;
+          
+          if (!m) {
+               warning(0, "S@T: Parse CGI Vars: Failed to parse multipart/form-data body: %s",
+                       octstr_get_cstr(request_body));
+               ret = -1;
+               goto done;
+          }
+          /* Go through body parts, pick out what we need. */
+          for (i = 0, n = mime_entity_num_parts(m); i < n; i++) {
+               MIMEEntity *mp = mime_entity_get_part(m, i);
+               List   *headers = mime_entity_headers(mp);
+               Octstr *body = mime_entity_body(mp);
+               Octstr *ct = http_header_value(headers, 
+                                              octstr_imm("Content-Type"));      
+               Octstr *cd = http_header_value(headers, 
+                                              octstr_imm("Content-Disposition"));
+               Octstr *name = http_get_header_parameter(cd, octstr_imm("name"));
+
+               if (name) {
+                    HTTPCGIVar *x = gw_malloc(sizeof *x);
+                    
+                    /* Strip quotes */
+                    if (octstr_get_char(name, 0) == '"') {
+                         octstr_delete(name, 0, 1);                 
+                         octstr_truncate(name, octstr_len(name) - 1);
+                    }
+                    
+                    x->name = octstr_duplicate(name);
+                    x->value = octstr_duplicate(body);
+                    
+                    gwlist_append(*cgivars, x);
+                    
+                    if (ct) { /* If the content type is set, use it. */
+                         x = gw_malloc(sizeof *x);
+                         x->name = octstr_duplicate(name);
+                         x->value = octstr_duplicate(ct);
+                         
+                         gwlist_append(*cgivar_ctypes, x);
+                    }
+                    octstr_destroy(name);
+               }
+
+               octstr_destroy(ct);             
+               octstr_destroy(cd);             
+               octstr_destroy(body);
+               http_destroy_headers(headers);
+               mime_entity_destroy(mp);
+          }
+          mime_entity_destroy(m);
+          
+     } else /* else it is nothing that we know about, so simply go away... */
+          ret = -1;
+done:
+     octstr_destroy(ctype);
+     octstr_destroy(charset);          
+     return ret;
 }
 
 #if 0

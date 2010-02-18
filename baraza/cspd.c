@@ -60,7 +60,7 @@ static void request_handler(List *req_list)
 	  int status = HTTP_OK, bin = -1;
 	  Octstr *tsid; 
 	  Octstr *ctype, *xmlns;
-	  int n, cspver = DEFAULT_CSP_VERSION, json = 0;
+	  int n, cspver = DEFAULT_CSP_VERSION, json = 0, form_data = 0;
 	  
 	  void *thandle = test_harness ? test_harness_new_request(test_logdir, r->ip, r->rh, r->body) : NULL;
 #if 0
@@ -97,6 +97,88 @@ static void request_handler(List *req_list)
 	       json = 1;
 
 	       cspver = CSP_VERSION(1,2); 
+	  } else if ((octstr_case_search(ctype, octstr_imm("application/x-www-form-urlencoded"), 0) >= 0) ||
+		     (octstr_case_search(ctype, octstr_imm("multipart/form-data"), 0) >= 0)) {
+	       List *cgi_types = NULL, *cgivars = NULL;
+	       int tparse;
+	       if ((tparse = parse_cgivars(r->rh, r->body, &cgivars, &cgi_types)) == 0) {
+		    Octstr *sessid = http_cgi_variable(cgivars, "sessid");
+		    Octstr *sender = http_cgi_variable(cgivars, "sender");
+		    Octstr *recipient = http_cgi_variable(cgivars, "recipient");
+		    Octstr *msg = http_cgi_variable(cgivars, "msg");	
+		    Octstr *ofmrt = http_cgi_variable(cgivars, "output-format");
+		    Octstr *xctype = http_cgi_variable(cgi_types, "msg"); 
+
+
+		    Octstr *x;
+		    int dlr = (x = http_cgi_variable(cgivars, "dlr")) != NULL && 
+			 octstr_str_case_compare(x, "yes") == 0;
+		    Sender_t from = parse_sender_str(octstr_get_cstr(sender));
+		    ContentType_t c = csp_String_from_bstr(xctype ? xctype : octstr_imm("text/plain"), Imps_ContentType);
+		    Recipient_t rto = parse_recipient_str(octstr_get_cstr(recipient));
+		    
+
+		    if (rto && from && msg && sessid) {
+			 MessageInfo_t minfo = csp_msg_new(MessageInfo, NULL,
+							   FV(ctype, c),
+							   FV(size, octstr_len(msg)),
+							   FV(rcpt, rto),
+							   FV(sender, from));
+			 SendMessage_Request_t sr = csp_msg_new(SendMessage_Request, NULL,
+								FV(dreport, dlr),
+								FV(msginfo, minfo),
+								FV(data, 
+								   csp_String_from_bstr(msg, Imps_ContentData)));
+			 TransactionContent_t tr = csp_msg_new(TransactionContent, 
+							       octstr_imm("http://www.openmobilealliance.org/DTD/WV-TRC1.2"),
+							       UFV(tc, sr->typ, sr));
+			 TransactionDescriptor_t tdescr =  csp_msg_new(TransactionDescriptor, NULL,
+								       FV(mode, csp_String_from_cstr_ex("Request", TransactionMode)),
+								       FV(id, csp_String_from_cstr("0",	Imps_TransactionID)));
+			 Transaction_t t = csp_msg_new(Transaction, NULL, 
+						       FV(descr, tdescr),
+						       FV(content, tr));
+			 SessionDescriptor_t sd = csp_msg_new(SessionDescriptor, NULL,
+							      FV(stype, 
+								 csp_String_from_cstr("inband", Imps_SessionType)),
+							      FV(sessid, 
+								 csp_String_from_bstr(sessid ? sessid : octstr_imm("x"),
+										      Imps_SessionID)));
+			 
+			 Session_t sx = csp_msg_new(Session, NULL,
+						    FV(descr, sd),
+						    FV(tlist, gwlist_create_ex(t)));
+			 req = csp_msg_new(WV_CSP_Message, 
+					   octstr_imm("http://www.openmobilealliance.org/DTD/WV-CSP1.2"),
+					   FV(sess, sx));
+			 
+			 cspver = CSP_VERSION(1,2); 
+		    } else {
+			 csp_msg_free(from);
+			 csp_msg_free(c);
+			 csp_msg_free(rto);
+		    }		          	    
+		    
+		    if (ofmrt && 
+			octstr_case_search(ofmrt, octstr_imm("json"), 0) >= 0)
+			 json = 1;
+	       }
+	       
+	       debug("cspd.form-data", 0, "Form Data request: len = %d", (int)octstr_len(r->body));
+	       
+	       form_data = 1;
+	       bin = -1;
+	       
+	       /* Replace ctype */
+	       octstr_destroy(ctype);
+	       
+	       if (json)
+		    ctype = octstr_create("application/json");
+	       else 
+		    ctype = octstr_create("text/plain");
+	       
+	       http_destroy_cgiargs(cgi_types);
+	       http_destroy_cgiargs(cgivars);
 	  }
 
 	  if (bin>=0) { /* only for plain-old CSP protocols. */
@@ -145,7 +227,7 @@ static void request_handler(List *req_list)
 	  /* this below is used for debugging purposes. */
 
 	  if ((tsid = http_header_value(r->rh, octstr_imm("X-Baraza-Session-ID"))) != NULL ) 
-	       if (req->sess && req->sess->descr && req->sess->descr) { /* change the session ID within. */
+	       if (req && req->sess && req->sess->descr && req->sess->descr) { /* change the session ID within. */
 		    CSP_MSG_CLEAR_SFIELD(req->sess->descr, sessid);
 		    CSP_MSG_SET_FIELD(req->sess->descr, sessid, 
 				      csp_String_from_bstr(tsid, Imps_SessionID));
@@ -300,8 +382,10 @@ static void request_handler(List *req_list)
 			 octstr_append(rbody, out);
 		    octstr_destroy(out);
 		    wbxml_pack_state_free(z);
-	       }  else 
+	       }  else if (json)
 		    rbody = make_json_packet(resp);	       
+	       else 
+		    rbody = octstr_create("Sent");
 	  } else 
 	       rbody = octstr_create(""); /* empty response as per CSP_Trans */
      loop:

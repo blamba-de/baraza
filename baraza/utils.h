@@ -137,6 +137,7 @@ int compare_clientid(Octstr *clientid_x, ClientID_t clientid_y);
 Octstr *make_sender_str(Sender_t sender);
 Sender_t parse_sender_str(char *in);
 
+Recipient_t parse_recipient_str(char *in);
 
 /* format a screen name into a string, parse it: Group must come first since it can't have spaces */
 #define format_screen_name_ex(groupid, sname) octstr_format("g:%.64s s:%.64s", (char *)(groupid), (sname)? (char *)(sname) : "")
@@ -286,6 +287,10 @@ int url_fetch_content(int method, Octstr *url, List *request_headers,
 
 
 int get_content_type(List *hdrs, Octstr **type, Octstr **params);
+
+
+int parse_cgivars(List *request_headers, Octstr *request_body,
+                  List **cgivars, List **cgivar_ctypes);
 
 
 #define DEBUG_LOG_MSG(str, ip, url, descr) do {Octstr *_x = octstr_duplicate(str); \
