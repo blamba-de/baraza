@@ -766,13 +766,16 @@ static int s2s_xmpp_processor(void *x, int type, iks *node)
 				      "<starttls xmlns='urn:ietf:params:xml:ns:xmpp-tls'>"
 				      "<required/>"
 				      "</starttls>"
+				      "<dialback xmlns='urn:xmpp:features:dialback'/>"
 				      "</stream:features>");  		    
 	       } else if (xconn->flags & XMPP_DB_CHECK_OK)  
 		    /* connection is secure and dialback is complete: connection is live. */
 		    SET_XMPP_CONN_STATE(xconn, XMPP_CONNECTED);			 
 	       	       
 	       if (version >= CSP_VERSION(1,0) && iks_is_secure(xconn->prs))
-		    iks_send_raw(xconn->prs, "<stream:features xmlns:stream='http://etherx.jabber.org/streams'/>");  /* empty features when we are in secure mode. */	    
+		    iks_send_raw(xconn->prs, "<stream:features xmlns:stream='http://etherx.jabber.org/streams'>"
+				 "<dialback xmlns='urn:xmpp:features:dialback'/>"
+				 "</stream:features>");  /* only dialback features when we are in secure mode. */	    
 	  }
       } else if (strcmp(name, "stream:features") == 0) { /* only v1.0 and above. */
 	   if (xconn->flags & XMPP_OUTGOING) { /* can only show up on out-going. */
