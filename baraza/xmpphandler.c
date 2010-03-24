@@ -121,8 +121,8 @@ static void my_iks_log_hook(void *x, const char *data, size_t len, int incoming)
 static void read_handler(void);
 static void write_handler(void);
 
-static const char *xmpp_conntype(int flags);
-static char *xmpp_oflags(int flags, char buf[]);
+static const char *xmpp_conntype(int flags, int is_secure);
+static char *xmpp_oflags(int flags, int is_secure, char buf[]);
 
 static void s2s_iks_handler(int fd, int revents, void *x);
 
@@ -625,18 +625,19 @@ static void my_iks_log_hook(void *x, const char *data, size_t len, int incoming)
      char flg[100];
      XMPPConn_t *xconn = x;
      int c_in = (xconn->flags & XMPP_INCOMING);
+     int is_secure = iks_is_secure(xconn->prs);
      info(0, " %s XMPP [%d] host/domain <%s: %s|%s|%s>: [%s:%d/%s] our_domain: [%s], id: [%s] %s",
 	  incoming ? " <<== " : " ==>> ", 
 	  iks_fd(xconn->prs),
 	  c_in ? "INCOMING CONN" : "OUTGOING CONN",
-	  iks_is_secure(xconn->prs) ? "SECURE" : "PLAIN",
-	  xmpp_conntype(xconn->flags),
-	  xmpp_oflags(xconn->flags, flg),
+	  is_secure ? "SECURE" : "PLAIN",
+	  xmpp_conntype(xconn->flags, is_secure),
+	  xmpp_oflags(xconn->flags, is_secure, flg),
 	  xconn->host, xconn->port, xconn->first_domain, xconn->our_domain, xconn->id, 
 	  data);
 }
 
-static const char *xmpp_conntype(int flags)
+static const char *xmpp_conntype(int flags, int is_secure)
 {
      if (flags & XMPP_CONNECTED)
 	  return "CONNECTED";     
@@ -644,17 +645,17 @@ static const char *xmpp_conntype(int flags)
 	  return "DEAD";
      else if (flags & XMPP_CONNECTING)
 	  return "CONNECTING";
-     else  if (flags & XMPP_TLS_TRY)
+     else  if (!is_secure && (flags & XMPP_TLS_TRY))
 	  return "STARTING_TLS";
      else 
-	  return "N/A";
+	  return "";
 }
 
-static char *xmpp_oflags(int flags, char buf[])
+static char *xmpp_oflags(int flags, int is_secure, char buf[])
 {
      char *p = buf;
      buf[0] = 0;
-     if (flags &  XMPP_USE_TLS)
+     if (!is_secure && (flags &  XMPP_USE_TLS))
 	  p += sprintf(p, "USE_TLS ");
      
      if (flags &  XMPP_DB_SENT)
@@ -688,19 +689,19 @@ static int s2s_xmpp_processor(void *x, int type, iks *node)
      Octstr *res = NULL;
      void *y;
      char *z;
+     int _xflag = iks_is_secure(xconn->prs);
+
      /* mutex is alread locked, so do not lock it! 
       * we are called here for reading...
       */
-#if 0     
-   info(0, "xmpp_processor [%s <%s - %s>]: %s", 
+#if 1     
+     info(0, "xmpp_processor [%s <%s - %s>]: %s", 
 	  xconn->flags & XMPP_INCOMING ? "INCOMING" : "OUTGOING",
-	  iks_is_secure(xconn->prs) ? "SECURE" : "PLAIN",
-	  xmpp_conntype(xconn->flags),
+	  _xflag  ? "SECURE" : "PLAIN",
+	  xmpp_conntype(xconn->flags, _xflag),
 	  name ? name : "(empty)"); 
 #endif
-     if (name == NULL || 
-	 type == IKS_NODE_STOP || 
-	 type == IKS_NODE_ERROR)  /* connection is closing. */
+     if (name == NULL || type == IKS_NODE_STOP || type == IKS_NODE_ERROR)  /* connection is closing. */
 	  SET_XMPP_CONN_STATE(xconn, XMPP_DEAD);
       else if (type == IKS_NODE_START) { /* stream:stream */
 	  char *id;
@@ -715,8 +716,8 @@ static int s2s_xmpp_processor(void *x, int type, iks *node)
 	  } else 
 	       version = 0;
 	  xconn->ver = version;
-	  if (xconn->flags & XMPP_OUTGOING) { /* find the id of the connection. */
-	       if ((id = iks_find_attrib(node, "id")) != NULL) 
+	  if (xconn->flags & XMPP_OUTGOING) { 
+	       if ((id = iks_find_attrib(node, "id")) != NULL) /* find the id of the connection. */
 		    strncpy(xconn->id, id, sizeof xconn->id);
 
 	       /* does this puppy support dialback? */
@@ -729,10 +730,8 @@ static int s2s_xmpp_processor(void *x, int type, iks *node)
 		* the db key right after the stream is opened. 
 		* Of course send the db key only once.
 		*/
-	       if (!(xconn->flags & XMPP_DB_SENT) && 
-		   (xconn->flags & XMPP_DB_SUPPORTED)) {
-		    if (version < CSP_VERSION(1,0) ||
-			iks_is_secure(xconn->prs))
+	       if (!(xconn->flags & XMPP_DB_SENT) &&  (xconn->flags & XMPP_DB_SUPPORTED)) {
+		    if (version < CSP_VERSION(1,0) || iks_is_secure(xconn->prs))
 			 send_db_key(xconn); 
 	       }
 	       
@@ -779,7 +778,11 @@ static int s2s_xmpp_processor(void *x, int type, iks *node)
       } else if (strcmp(name, "stream:features") == 0) { /* only v1.0 and above. */
 	   if (xconn->flags & XMPP_OUTGOING) { /* can only show up on out-going. */
 		iks *st_node = iks_find(node, "starttls");
-	       if (st_node && 
+		iks *db_node = iks_find(node, "dialback"); 
+		
+		xconn->flags |= (db_node) ? XMPP_DB_SUPPORTED : 0;
+		
+		if (st_node && 
 		   !iks_is_secure(xconn->prs) ) { /* the secure check should not be required, but...*/
 		    xconn->flags |= XMPP_USE_TLS;
 		    if (iks_start_tls(xconn->prs) != IKS_OK) /* start TLS. */
@@ -936,11 +939,11 @@ static int s2s_xmpp_processor(void *x, int type, iks *node)
 	       xmpp2csp_trans(c, node, xconn); /* process and send reply as needed. */
      }   else 
 	  warning(0, "xmpp_processor received %s, not processed!", name);
-#if 0
+#if 1
      info(0, "xmpp_processor complete [%s (%s - %s)]: %s", 
 	  xconn->flags & XMPP_INCOMING ? "INCOMING" : "OUTGOING",
-	  iks_is_secure(xconn->prs) ? "SECURE" : "PLAIN",
-	  xmpp_conntype(xconn->flags),
+	  _xflag? "SECURE" : "PLAIN",
+	  xmpp_conntype(xconn->flags, _xflag),
 	  name ? name : "(empty)");
 #endif
      pg_cp_return_conn(c);
@@ -951,9 +954,9 @@ static int s2s_xmpp_processor(void *x, int type, iks *node)
      info(0, "Leaving XMPP Processor [%d] <%s: %s|%s|%s>: [%s:%d/%s] our_domain: [%s], id: [%s]",
 	  iks_fd(xconn->prs),
 	  (xconn->flags & XMPP_INCOMING) ? "INCOMING" : "OUTGOING",
-	  iks_is_secure(xconn->prs) ? "SECURE" : "PLAIN",
-	  xmpp_conntype(xconn->flags),
-	  xmpp_oflags(xconn->flags, buf),
+	  _xflag ? "SECURE" : "PLAIN",
+	  xmpp_conntype(xconn->flags, _xflag),
+	  xmpp_oflags(xconn->flags, _xflag, buf),
 	  xconn->host, xconn->port, xconn->first_domain, xconn->our_domain, xconn->id);
 
      /* check to see if we need to close an incoming connection. */
