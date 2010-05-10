@@ -116,7 +116,8 @@ static List *add_nicks_to_clist(PGconn *c, List *nl, int64_t cid, RequestInfo_t 
 	       int islocal;
 	       int64_t xuid;
 	       char *cname;
-	       
+	       int pcount;
+
 	       if (nu->u.typ == Imps_NickName) {
 		    NickName_t x = nu->u.val;
 		    u = (x) ? x->user : NULL;
@@ -168,6 +169,7 @@ static List *add_nicks_to_clist(PGconn *c, List *nl, int64_t cid, RequestInfo_t 
 		    int64_t x = strtoull(z, NULL, 10);		    
 		    pvals[1] = z;
 		    sprintf(cmd,  "UPDATE contactlist_members SET cname=$1 WHERE id = %lld", x);
+		    pcount = 1;
 	       } else {
 		    pvals[1] = cmemb;
 		    
@@ -175,10 +177,11 @@ static List *add_nicks_to_clist(PGconn *c, List *nl, int64_t cid, RequestInfo_t 
 			    "(%lld, $2, $1)", 
 			    xuid >= 0 ? "local_userid" : "foreign_userid",
 			    cid);
+		    pcount = 2;
 	       }
 	       PQclear(r);
 	       
-	       r = PQexecParams(c, cmd, 2, NULL, pvals, NULL, NULL, 0);
+	       r = PQexecParams(c, cmd, pcount, NULL, pvals, NULL, NULL, 0);
 	       if (PQresultStatus(r) != PGRES_COMMAND_OK) 
 		    warning(0, "failed to add/update contact: %s", PQerrorMessage(c));
 	       PQclear(r);		    		    

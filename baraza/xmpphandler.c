@@ -160,29 +160,31 @@ static void tls_logging(int lev, const char *s)
 }
 #endif
 
+static struct imps_conf_t *conf;
 static int xmpp_init(struct imps_conf_t *config)
 {
      int i;
      int max_simul;
      
+     conf = config;
      if (outgoing != NULL || incoming != NULL)
 	  return -1;
 
      gcry_control (GCRYCTL_ENABLE_QUICK_RANDOM, 0);
      gcry_control (GCRYCTL_SET_THREAD_CBS, &gcry_threads_pthread);
-
+     
      /* initialise gnutls stuff. */
      if (gnutls_global_init () != 0)
 	  return -1;
-
+	  
 #if 0
      gnutls_global_set_log_function(tls_logging);    
      gnutls_global_set_log_level(10); 
 #endif
-
+     
      if (gnutls_certificate_allocate_credentials (&cred) != 0)
 	  return -1;
-	
+     
      if (config->ssl_certkeyfile[0]) {
 	  if (gnutls_certificate_set_x509_key_file (cred, 
 						    config->ssl_certkeyfile,
@@ -198,13 +200,12 @@ static int xmpp_init(struct imps_conf_t *config)
 							 GNUTLS_X509_FMT_PEM) != 0)
 		    return -1;
      }
-	  
      
-	  
      generate_dh_params ();
      
      gnutls_certificate_set_dh_params (cred, dh_params);
      
+
      strncpy(myhostname, config->myhostname, sizeof myhostname);
      strncpy(mydomain,   config->mydomain, sizeof mydomain);
 
@@ -287,10 +288,9 @@ static void xmpp_shutdown(void)
      connlist =  outgoing_requests = NULL;
      outgoing = incoming = NULL;     
 
- 
+
      gnutls_certificate_free_credentials(cred);     
      gnutls_global_deinit();
-
 }
 
 static void update_xmppconn(XMPPConn_t *x, char *our_domain, char *domain)
@@ -384,6 +384,7 @@ static void s2s_xmpp_listener(void *unused)
 	  struct sockaddr_in addr;
 	  socklen_t alen = sizeof addr;
 	  int fd;
+	  int xtls = (conf && conf->use_tls) && iks_has_tls();
 	  
 	  fd = accept(xmpp_socket, (struct sockaddr *)&addr, &alen);
 	  if (fd < 0) {
@@ -408,9 +409,17 @@ static void s2s_xmpp_listener(void *unused)
 				XMPP_CONNECTING | XMPP_INCOMING);
 	  
 	  xconn->prs = iks_stream_new_ex("jabber:server", xconn,
-					   s2s_xmpp_processor, 
-					   "id", xconn->id,
-					   "xmlns:db", "jabber:server:dialback");
+					 s2s_xmpp_processor, 
+					 xtls ? 
+					 "<stream:features xmlns:stream='http://etherx.jabber.org/streams'>"
+					 "<starttls xmlns='urn:ietf:params:xml:ns:xmpp-tls'/>"
+					 "<dialback xmlns='urn:xmpp:features:dialback'/>"
+					 "</stream:features>" :
+					 "<stream:features xmlns:stream='http://etherx.jabber.org/streams'>"
+					 "<dialback xmlns='urn:xmpp:features:dialback'/>"
+					 "</stream:features>",
+					 "id", xconn->id,
+					 "xmlns:db", "jabber:server:dialback");
 	  octstr_destroy(x);
 	  octstr_destroy(id_data);
 	  if (xconn->prs == NULL)  {
@@ -519,11 +528,10 @@ static int get_connection(char *domain, char *our_domain, XMPPConn_t **xconn, in
      
      res = SSP_ERROR_TRANSIENT; /* at this point we know XMPP SRV records exist. */
      
-     x = make_xmppconn(domain, our_domain, NULL, 
-		       NULL, 
+     x = make_xmppconn(domain, our_domain, NULL, NULL, 
 		       XMPP_CONNECTING | XMPP_OUTGOING);
      if ((x->prs = iks_stream_new_ex("jabber:server", x,
-				     s2s_xmpp_processor,	       
+				     s2s_xmpp_processor, "",	       
 				     "xmlns:db", "jabber:server:dialback", 
 				     "from", x->our_domain)) == NULL)  {
 	  error(0, "failed to create sax parser for connection for %s",
@@ -694,7 +702,7 @@ static int s2s_xmpp_processor(void *x, int type, iks *node)
      /* mutex is alread locked, so do not lock it! 
       * we are called here for reading...
       */
-#if 1     
+#if 0     
      info(0, "xmpp_processor [%s <%s - %s>]: %s", 
 	  xconn->flags & XMPP_INCOMING ? "INCOMING" : "OUTGOING",
 	  _xflag  ? "SECURE" : "PLAIN",
@@ -731,7 +739,7 @@ static int s2s_xmpp_processor(void *x, int type, iks *node)
 		* Of course send the db key only once.
 		*/
 	       if (!(xconn->flags & XMPP_DB_SENT) &&  (xconn->flags & XMPP_DB_SUPPORTED)) {
-		    if (version < CSP_VERSION(1,0) || iks_is_secure(xconn->prs))
+		    if ((version < CSP_VERSION(1,0)) || iks_is_secure(xconn->prs))
 			 send_db_key(xconn); 
 	       }
 	       
@@ -760,26 +768,31 @@ static int s2s_xmpp_processor(void *x, int type, iks *node)
 		     * otherwise iksemel will have sent greeting.
 		     */
 		    iks_send_header(xconn->prs, xconn->first_domain[0] ? xconn->first_domain : NULL);
+#if 0 /* this is now sent internally for us by above function */
 		    if (version >= CSP_VERSION(1,0))
 			 iks_send_raw(xconn->prs, "<stream:features xmlns:stream='http://etherx.jabber.org/streams'>"
 				      "<starttls xmlns='urn:ietf:params:xml:ns:xmpp-tls'/>"
 				      "<dialback xmlns='urn:xmpp:features:dialback'/>"
 				      "</stream:features>");  		    
+#endif
 	       } else if (xconn->flags & XMPP_DB_CHECK_OK)  
 		    /* connection is secure and dialback is complete: connection is live. */
 		    SET_XMPP_CONN_STATE(xconn, XMPP_CONNECTED);			 
-	       	       
+	       
+#if 0 /* will now be sent automatically after secure mode entered */
 	       if (version >= CSP_VERSION(1,0) && iks_is_secure(xconn->prs))
 		    iks_send_raw(xconn->prs, "<stream:features xmlns:stream='http://etherx.jabber.org/streams'>"
 				      "<starttls xmlns='urn:ietf:params:xml:ns:xmpp-tls'/>"
 				      "<dialback xmlns='urn:xmpp:features:dialback'/>"
 				      "</stream:features>");  /* only dialback features when we are in secure mode. */	    
+#endif
 	  }
       } else if (strcmp(name, "stream:features") == 0) { /* only v1.0 and above. */
 	   if (xconn->flags & XMPP_OUTGOING) { /* can only show up on out-going. */
-		iks *st_node = iks_find(node, "starttls");
+		int xuse_tls = conf && conf->use_tls;
+		iks *st_node = xuse_tls ? iks_find(node, "starttls") : NULL; /* Do not look for tls tag if we don't support tls */
 		iks *db_node = iks_find(node, "dialback"); 
-		
+
 		xconn->flags |= (db_node) ? XMPP_DB_SUPPORTED : 0;
 		
 		if (st_node && 
@@ -939,7 +952,7 @@ static int s2s_xmpp_processor(void *x, int type, iks *node)
 	       xmpp2csp_trans(c, node, xconn); /* process and send reply as needed. */
      }   else 
 	  warning(0, "xmpp_processor received %s, not processed!", name);
-#if 1
+#if 0
      info(0, "xmpp_processor complete [%s (%s - %s)]: %s", 
 	  xconn->flags & XMPP_INCOMING ? "INCOMING" : "OUTGOING",
 	  _xflag? "SECURE" : "PLAIN",

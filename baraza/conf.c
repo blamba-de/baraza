@@ -198,8 +198,7 @@ int parse_conf(FILE *f, struct imps_conf_t *config)
 	       if (strcasecmp(field, "send-sms-url") == 0) 
 		    strncpy(config->send_sms_url, value, sizeof config->send_sms_url);
 	       else if (strcasecmp(field, "ssl-certkey-file") == 0) 
-		    strncpy(config->ssl_certkeyfile, value,
-			    sizeof config->ssl_certkeyfile);
+		    strncpy(config->ssl_certkeyfile, value, sizeof config->ssl_certkeyfile);
 	       else if (strcasecmp(field, "ssl-crl-file") == 0) 
 		    strncpy(config->ssl_crlfile,value, sizeof config->ssl_crlfile);
 	       else if (strcasecmp(field, "ssl-trusted-ca-file") == 0) 
@@ -328,7 +327,8 @@ int parse_conf(FILE *f, struct imps_conf_t *config)
      }
      
 #endif    
-     
+     if (config->ssl_certkeyfile[0]) 
+	  config->use_tls = 1;
      if (config->logdir[0]) {
 	  char buf[512];
 	  

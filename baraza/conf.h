@@ -59,6 +59,8 @@ struct imps_conf_t {
      char ssl_ca_file[256];
      char ssl_crlfile[256];
 
+     unsigned char use_tls;
+     
      char nonce_salt[256];
      char mm_txt[512];
      char send_sms_url[512];
