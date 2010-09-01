@@ -458,7 +458,7 @@ EmptyObject_t csp_handle_request(void *req_obj, int typ, RequestInfo_t *ri)
 
      if ((ri == NULL || ri->sessid < 0) && 
 	 (typ != Imps_Login_Request &&  /* these two do not require a session. */
-	  typ != Imps_GetSPInfo_Request)) {
+	  typ != Imps_GetSPInfo_Request && typ != Imps_Registration_Request)) {
 	  rs = csp_msg_new(Result, NULL, 
 			   FV(code,604), 
 			   FV(descr, csp_String_from_cstr("Not logged on", 

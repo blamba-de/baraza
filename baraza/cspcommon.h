@@ -31,6 +31,8 @@ KeepAlive_Response_t handle_keepalive(RequestInfo_t *ri, KeepAlive_Request_t req
 void *handle_poll_req(RequestInfo_t *ri, void *unused);
 GetSPInfo_Response_t handle_get_spinfo(RequestInfo_t *ri, GetSPInfo_Request_t req);
 
+Registration_Response_t handle_register(RequestInfo_t *ri, Registration_Request_t req);
+
 /* utility function. */
 int verify_sender(PGconn *c, Sender_t *xsender, int64_t uid, 
 		  Octstr *userid,

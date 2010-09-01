@@ -2251,7 +2251,6 @@ void _gw_free(void *x)
 
 const request_func_t req_funcs[] = {
      CSP_FUNC(Login_Request, handle_login),
-     
      CSP_FUNC(Logout_Request, handle_logout),	       
      CSP_FUNC(Service_Request, handle_serviceRequest),
      
@@ -2340,6 +2339,8 @@ const request_func_t req_funcs[] = {
 
      CSP_FUNC(Polling_Request, handle_poll_req),
      CSP_FUNC(GetSPInfo_Request, handle_get_spinfo),
+
+     CSP_FUNC(Registration_Request, handle_register),
 
      CSP_FUNC(Status, handle_noop), /* XXX ignore all status messages (really??) */
 

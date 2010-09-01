@@ -215,6 +215,9 @@ UELEM(SubscribeGroupNotice_Response)
 UELEM(GroupChangeNotice)
 UELEM(Extended_Request)
 UELEM(Extended_Response)
+UELEM(Registration_Request)
+UELEM(Registration_Response)
+
 )
 )
 
@@ -1970,4 +1973,18 @@ Structure(Inf_link,1,IMPS_1_1,NONE,
   Item(link,Link)
  Item(txt, Text)
  Item(ctype, ContentType)
+)
+
+Basic(EmailID,  IMPS_1_1, NONE, String)
+/* Baraza specific */
+Structure(Registration_Request,1, IMPS_1_1, NONE,
+	  Item(user,User) /* contains user and full name */ 
+	  Item(pwd, Password) 
+	  Item(msisdn,MSISDN)
+	  Item(email,EmailID)
+)
+
+Structure(Registration_Response,1, IMPS_1_1, NONE,
+	  Item(user,UserID)
+	  Item(res,Result)
 )

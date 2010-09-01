@@ -136,6 +136,7 @@ static int check_user(char user[], int lim)
 	       ) return 0;
      return 1;
 }
+
 Login_Response_t handle_login(RequestInfo_t *ri, Login_Request_t req)
 {
      char *user = req->user ? csp_String_to_cstr(req->user) : NULL;
@@ -2488,4 +2489,108 @@ GetSPInfo_Response_t handle_get_spinfo(RequestInfo_t *ri, GetSPInfo_Request_t re
      octstr_destroy(url);
 
      return resp;
+}
+
+
+Registration_Response_t handle_register(RequestInfo_t *ri, Registration_Request_t req)
+{
+     char *user = req->user && req->user->user ? csp_String_to_cstr(req->user->user) : NULL;
+     char *fname = req->user && req->user->fname ? csp_String_to_cstr(req->user->fname) : NULL; 
+     char *msisdn = req->msisdn ? csp_String_to_cstr(req->msisdn) : NULL;
+     char *email = req->email ? csp_String_to_cstr(req->email) : NULL;
+     char *pass = req->pwd ? csp_String_to_cstr(req->pwd) : NULL;
+     char xuser[DEFAULT_BUF_LEN] = {0}, xdomain[DEFAULT_BUF_LEN] = {0};
+
+     
+     Octstr *final_user  = NULL;
+     Result_t rs;
+     Registration_Response_t res = NULL;
+     int code = 200;
+     char *err = "";
+     PGconn *c = ri->c;
+     PGresult *r;
+     
+     
+     const char *pvals[10];
+     
+     if (user == NULL || user[0] == 0) {
+	  error(0, "missing userid in registration request");
+	  code = 531;
+	  err = "missing user";
+	  goto done;
+     } else if (fname == NULL) {
+	  error(0, "missing fullname in registration request");
+
+	  code = 531;
+	  err = "missing fullname";
+	  
+	  goto done;
+     } else if (pass == NULL) {
+	  error(0, "missing password in  registration request");
+
+	  code = 531;
+	  err = "missing password";
+	  
+	  goto done;
+     } else if (email == NULL || strchr(email,'@') == NULL) {
+	  error(0, "missing/invalid email in  registration request");
+
+	  code = 531;
+	  err = "missing/invalid email";
+	  
+	  goto done;
+     } else if (msisdn == NULL) {
+	  error(0, "missing/invalid msisdn in  registration request");
+
+	  code = 531;
+	  err = "missing/invalid msisdn";
+	  
+	  goto done;
+     }
+     
+     extract_id_and_domain(user, xuser, xdomain);
+     if (xdomain[0] == 0) /* default to current domain. */
+	  strncpy(xdomain, ri->conf->mydomain, sizeof xdomain);
+          
+     pvals[0] = xuser;
+     pvals[1] = xdomain;
+     
+     pvals[2] = pass;
+
+     r = PQexecParams(c, "SELECT new_user($1, $3,$2, false)", 3, NULL, pvals, NULL, NULL, 0);
+     
+     code = (PQresultStatus(r) == PGRES_TUPLES_OK) ? 200 : 500; 
+     err = (code == 200) ? "Success" : "Registration failed!";
+     
+     if (code == 200) {
+	  PGresult *r2;
+	  
+	  pvals[0] = PQgetvalue(r, 0,0);
+	  pvals[1] = msisdn;
+	  pvals[2] = email;
+	  pvals[3] = fname;
+     
+	  r2 = PQexecParams(c,
+			    "UPDATE users SET lastname=$4,phone=$2,email=$3 WHERE id = $1 RETURNING userid||'@'||domain",
+			    4, NULL, pvals, NULL, NULL, 0);
+	  code = (PQresultStatus(r2) == PGRES_TUPLES_OK) ? 200 : 500; 
+	  err = (code == 200) ? "Success" : "Registration failed!";
+	  
+	  if (code == 200) 
+	       final_user = octstr_create(PQgetvalue(r2, 0, 0));
+	  PQclear(r2); 
+     }
+     
+     PQclear(r);
+
+done:
+     rs = csp_msg_new(Result, NULL, 
+		      FV(code,code), 
+		      FV(descr, csp_String_from_cstr(err, Imps_Description)));
+     res = csp_msg_new(Registration_Response,NULL, 
+		       FV(user, csp_String_from_bstr(final_user ? final_user : octstr_imm(""), Imps_UserID)),
+		       FV(res,rs));
+
+     octstr_destroy(final_user);
+     return res;
 }
