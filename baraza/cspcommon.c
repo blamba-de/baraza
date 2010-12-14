@@ -42,6 +42,7 @@ static Octstr *make_sess(PGconn *c, char *oldsess, char *user, char *domain,
 			 ClientID_t clnt, ApplicationID_t appid, 
 			 char *cookie,
 			 char **err, int *code, int64_t *xuid, int64_t *xsid, char *orig_msisdn,
+			 Octstr **sec_question,
 			 int csp_version)
 {
      PGresult *r;
@@ -50,19 +51,23 @@ static Octstr *make_sess(PGconn *c, char *oldsess, char *user, char *domain,
      Octstr *clid = NULL, *sess = NULL;
      const char *pvals[20] = {user, domain};
      
-     /* Get the uid. */
+     /* Get the uid and security question */
      
+     *sec_question = NULL;
      r = PQexecParams(c,
-		      "SELECT id,phone FROM users WHERE userid=$1 AND domain = $2",
+		      "SELECT id,phone,security_question FROM users WHERE userid=$1 AND domain = $2",
 		      2, NULL, pvals, NULL, NULL, 0);
      
      if (PQresultStatus(r) != PGRES_TUPLES_OK || PQntuples(r) < 1) {
 	  error(0, "user [%s at %s] disappeared ??", user, domain);
 	  msisdn[0] = 0;
      } else {
+	  char *xs;
 	  strncpy(_uid, PQgetvalue(r, 0, 0), sizeof _uid);
 	  uid = strtoull(_uid, NULL, 10);
 	  strncpy(msisdn, PQgetvalue(r, 0, 1), sizeof msisdn);
+	  if (sec_question)
+	       *sec_question =  (xs = PQgetvalue(r, 0, 2)) != NULL ? octstr_create(xs) : octstr_imm("");
      }
      PQclear(r);
 
@@ -159,6 +164,7 @@ Login_Response_t handle_login(RequestInfo_t *ri, Login_Request_t req)
      AgreedCapabilityList_t caplist = NULL;
      int has_user, auto_regd = 0;
      const char *pvals[10];
+     Octstr *sec_q = NULL;
      
      if (user == NULL || user[0] == 0) {
 	  error(0, "missing userid n login request");
@@ -263,7 +269,7 @@ Login_Response_t handle_login(RequestInfo_t *ri, Login_Request_t req)
 	  char *xmsisdn = req->client && req->client->msisdn ?
 	    csp_String_to_cstr(req->client->msisdn) : NULL;
 	  Octstr *s = make_sess(c, oldsess, xuser, xdomain, req->client, req->appid, cookie,
-				&err, &code, &uid, &xsid, xmsisdn, ri->ver);
+				&err, &code, &uid, &xsid, xmsisdn, &sec_q, ri->ver);
 	  Octstr *clid = make_clientid(req->client, req->appid);
 	  
 	  ri->uid = uid; /* set new UID and session id */
@@ -289,7 +295,7 @@ Login_Response_t handle_login(RequestInfo_t *ri, Login_Request_t req)
 	  
 	  cap_req = (code == 200) && (caplist == NULL); /* capability request only if not yet done. */
 	  log_success = (code == 200); /* reset log_success. */
-	  	  
+	  
 	  octstr_destroy(clid);
 
 	  if (log_success) { /* update presence */
@@ -328,6 +334,8 @@ Login_Response_t handle_login(RequestInfo_t *ri, Login_Request_t req)
 	       
 	       csp_msg_free(p);
 	       csp_msg_free(appid);
+	       if (sec_q)  /* Set security question as detailed result */
+		    err =octstr_get_cstr(sec_q);
 	  }
      } else 
 	  ri->sessid = -1; /* not yet logged on, kill sessid if any. */     
@@ -361,6 +369,7 @@ Login_Response_t handle_login(RequestInfo_t *ri, Login_Request_t req)
 	  csp_msg_unset_fieldset(res, "nonce");
 #endif
 
+     octstr_destroy(sec_q);
      return res;
 }
 
@@ -2499,6 +2508,8 @@ Registration_Response_t handle_register(RequestInfo_t *ri, Registration_Request_
      char *msisdn = req->msisdn ? csp_String_to_cstr(req->msisdn) : NULL;
      char *email = req->email ? csp_String_to_cstr(req->email) : NULL;
      char *pass = req->pwd ? csp_String_to_cstr(req->pwd) : NULL;
+     char *sec_q = req->sec_q ? csp_String_to_cstr(req->sec_q) : NULL;
+     char *sec_a = req->sec_a ? csp_String_to_cstr(req->sec_a) : NULL;
      char xuser[DEFAULT_BUF_LEN] = {0}, xdomain[DEFAULT_BUF_LEN] = {0};
 
      
@@ -2569,10 +2580,13 @@ Registration_Response_t handle_register(RequestInfo_t *ri, Registration_Request_
 	  pvals[1] = msisdn;
 	  pvals[2] = email;
 	  pvals[3] = fname;
-     
+	  pvals[4] = sec_q ? sec_q : "";
+	  pvals[5] = sec_a;
+	  
 	  r2 = PQexecParams(c,
-			    "UPDATE users SET lastname=$4,phone=$2,email=$3 WHERE id = $1 RETURNING userid||'@'||domain",
-			    4, NULL, pvals, NULL, NULL, 0);
+			    "UPDATE users SET lastname=$4,phone=$2,email=$3, "
+			    " security_question=$5, security_answer=$6 WHERE id = $1 RETURNING userid||'@'||domain",
+			    6, NULL, pvals, NULL, NULL, 0);
 	  code = (PQresultStatus(r2) == PGRES_TUPLES_OK) ? 200 : 500; 
 	  err = (code == 200) ? "Success" : "Registration failed!";
 	  
@@ -2592,5 +2606,98 @@ done:
 		       FV(res,rs));
 
      octstr_destroy(final_user);
+     return res;
+}
+
+
+GetNewPassword_Response_t handle_get_password(RequestInfo_t *ri, GetNewPassword_Request_t req)
+{
+     char *user = req->user && req->user->user ? csp_String_to_cstr(req->user->user) : NULL;
+     char *sec_q = req->sec_q ? csp_String_to_cstr(req->sec_q) : NULL;
+     char *sec_a = req->sec_a ? csp_String_to_cstr(req->sec_a) : NULL;
+     char *pass = req->pwd ? csp_String_to_cstr(req->pwd) : NULL;
+     char xuser[DEFAULT_BUF_LEN] = {0}, xdomain[DEFAULT_BUF_LEN] = {0};
+
+     
+     Result_t rs;
+     GetNewPassword_Response_t res = NULL;
+     int code = 200;
+     char *err = "";
+     PGconn *c = ri->c;
+     PGresult *r;
+     char *xnew_pass = NULL;     
+     const char *pvals[10];
+     
+     if (user == NULL || user[0] == 0) {
+	  error(0, "missing userid in registration request");
+	  code = 531;
+	  err = "missing user";
+	  goto done;
+     } else if (sec_q == NULL ) {
+	  error(0, "missing/invalid security question");
+
+	  code = 531;
+	  err = "missing/invalid security question";
+	  
+	  goto done;
+     } else if (sec_a == NULL) {
+	  error(0, "missing/invalid security answer");
+
+	  code = 531;
+	  err = "missing/invalid security answer";
+	  
+	  goto done;
+     }
+     
+     extract_id_and_domain(user, xuser, xdomain);
+     if (xdomain[0] == 0) /* default to current domain. */
+	  strncpy(xdomain, ri->conf->mydomain, sizeof xdomain);
+          
+     pvals[0] = xuser;
+     pvals[1] = xdomain;
+     pvals[2] = sec_q;
+     pvals[3] = sec_a;
+     
+     r = PQexecParams(c,"SELECT id from users WHERE lower(userid)=lower($1) AND lower(domain) = lower($2) AND "
+		      "lower($3) = lower(security_question) AND lower($4) = lower(security_answer)", 
+		      4, NULL, pvals, NULL, NULL, 0);
+     
+     code = (PQresultStatus(r) == PGRES_TUPLES_OK) && PQntuples(r) > 0 ? 200 : 500; 
+     err = (code == 200) ? "Success" : "Failed to find user/security question/answer failed!";
+     
+     if (code == 200) {
+	  PGresult *r2;
+	  char new_pass[8+1];
+	  
+	  /* Generate password */
+	  if (pass == NULL || pass[0] == 0) {
+	       int i;
+	       for (i = 0; i< -1 + sizeof new_pass; i++) 
+		    new_pass[i] = '0' + (random() % 10);
+	       new_pass[i] = 0;
+	       xnew_pass = new_pass;
+	  } else 
+	       xnew_pass = pass;
+	  
+	  pvals[0] = PQgetvalue(r, 0,0); /* The ID */
+	  pvals[1] = xnew_pass;
+	  
+	  r2 = PQexecParams(c, "SELECT update_plain_pass($1,$2)",
+			    2, NULL, pvals, NULL, NULL, 0);
+	  code = (PQresultStatus(r2) == PGRES_TUPLES_OK) ? 200 : 500; 
+	  err = (code == 200) ? "Success" : "Password update failed!";
+	  
+	  PQclear(r2); 
+     }
+     
+     PQclear(r);
+
+done:
+     rs = csp_msg_new(Result, NULL, 
+		      FV(code,code), 
+		      FV(descr, csp_String_from_cstr(err, Imps_Description)));
+     res = csp_msg_new(GetNewPassword_Response,NULL, 
+		       FV(pwd, csp_String_from_cstr(xnew_pass ? xnew_pass : "", Imps_Password)),
+		       FV(res,rs));
      return res;
 }

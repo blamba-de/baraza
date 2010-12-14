@@ -111,7 +111,8 @@ int main(int argc, char *argv[])
      /* initialise stuff. */
      gwlib_init();
      res_init(); /* init resolver engine. */
-
+     
+     srand(time(NULL));
      xmlLineNumbersDefault(1);
 
      /* handle the command line */
@@ -176,7 +177,7 @@ int main(int argc, char *argv[])
      while ((client = http_accept_request(config->http_port, &ip, &url, &rh, &body, &cgivars)) != NULL) {
 	  HTTPRequest_t *r = make_http_request_info(rh, url, body, client, ip, cgivars);
 
-	  info(1, "New request[%s], body len=%ld, uri=%s, header dump follows: ", 
+	  info(0, "New request[%s], body len=%ld, uri=%s, header dump follows: ", 
 	       octstr_get_cstr(r->ua), octstr_len(body), octstr_get_cstr(url));
 #if 0
 	  http_header_dump(rh);

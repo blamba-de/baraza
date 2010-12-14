@@ -1,6 +1,6 @@
 #ifndef __DB_TABLES_INCLUDED__
 #define __DB_TABLES_INCLUDED__
-/* Auto generated at  Sun 17 Jan 2010 06:57:29 EAT  */
+/* Auto generated at  Tue 14 Dec 2010 12:59:32 EAT  */
 static char *table_cmds[] = {
 "-- \n"
 ,
@@ -43,6 +43,8 @@ static char *table_cmds[] = {
 "  auto_reg boolean NOT NULL DEFAULT FALSE,\n"
 "  bot_url text, -- If this is set, then it is the URL of the agent who handles IMs to this user. \n"
 "                -- this means that this is actually a Bot not a real user. \n"
+"  security_question text NOT NULL DEFAULT '',\n"
+"  security_answer text,\n"
 " UNIQUE(userid,domain)\n"
 ");\n"
 ,
@@ -502,7 +504,7 @@ static char *table_cmds[] = {
 "		x text;\n"
 "		cp text;\n"
 "		y text;\n"
-"	BEGIN\n"
+"	BEGIN1\n"
 "	x := xpass;\n"
 "	SELECT (random()::text || current_timestamp::text) INTO y;\n"
 "	SELECT md5(x||y) INTO cp;\n"
@@ -545,6 +547,19 @@ static char *table_cmds[] = {
 "		END IF;\n"
 "		RETURN t;	\n"
 "	END;\n"
+"$$ LANGUAGE plpgsql;\n"
+,
+"CREATE OR REPLACE FUNCTION update_plain_pass(uid bigint, pass text) RETURNS boolean AS $$\n"
+"       DECLARE \n"
+"         t boolean;\n"
+"	 r text;\n"
+"        xnonce text;\n"
+"       BEGIN\n"
+"           SELECT (random()::text || current_timestamp::text) INTO r; -- rand salt\n"
+"	   SELECT md5(current_timestamp::text) INTO xnonce; -- nonce\n"
+"	   UPDATE users SET rand_salt = r,nonce=xnonce,crypt_md5_pass = md5(md5(xnonce||pass)||r) WHERE id = uid;\n"
+"	   RETURN TRUE;\n"
+"       END;\n"
 "$$ LANGUAGE plpgsql;\n"
 ,
 "CREATE OR REPLACE FUNCTION verify_md5_pass(u text, d text, p text) RETURNS boolean AS $$\n"

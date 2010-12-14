@@ -44,6 +44,8 @@ CREATE TABLE users (
   auto_reg boolean NOT NULL DEFAULT FALSE,
   bot_url text, -- If this is set, then it is the URL of the agent who handles IMs to this user. 
                 -- this means that this is actually a Bot not a real user. 
+  security_question text NOT NULL DEFAULT '',
+  security_answer text,
  UNIQUE(userid,domain)
 );
 
@@ -573,7 +575,7 @@ CREATE  OR REPLACE FUNCTION new_user_md5(u text, d text, xnonce text, xpass text
 		x text;
 		cp text;
 		y text;
-	BEGIN
+	BEGIN1
 	x := xpass;
 	SELECT (random()::text || current_timestamp::text) INTO y;
 	SELECT md5(x||y) INTO cp;
@@ -620,6 +622,20 @@ CREATE OR REPLACE FUNCTION verify_plain_pass(u text, d text, p text) RETURNS boo
 		END IF;
 		RETURN t;	
 	END;
+$$ LANGUAGE plpgsql;
+
+CREATE OR REPLACE FUNCTION update_plain_pass(uid bigint, pass text) RETURNS boolean AS $$
+       DECLARE 
+         t boolean;
+	 r text;
+        xnonce text;
+       BEGIN
+           SELECT (random()::text || current_timestamp::text) INTO r; -- rand salt
+	   SELECT md5(current_timestamp::text) INTO xnonce; -- nonce
+
+	   UPDATE users SET rand_salt = r,nonce=xnonce,crypt_md5_pass = md5(md5(xnonce||pass)||r) WHERE id = uid;
+	   RETURN TRUE;
+       END;
 $$ LANGUAGE plpgsql;
 
 CREATE OR REPLACE FUNCTION verify_md5_pass(u text, d text, p text) RETURNS boolean AS $$

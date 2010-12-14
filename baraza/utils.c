@@ -2341,6 +2341,7 @@ const request_func_t req_funcs[] = {
      CSP_FUNC(GetSPInfo_Request, handle_get_spinfo),
 
      CSP_FUNC(Registration_Request, handle_register),
+     CSP_FUNC(GetNewPassword_Request, handle_get_password),
 
      CSP_FUNC(Status, handle_noop), /* XXX ignore all status messages (really??) */
 
