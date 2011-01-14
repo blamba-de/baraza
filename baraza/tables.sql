@@ -575,10 +575,9 @@ CREATE  OR REPLACE FUNCTION new_user_md5(u text, d text, xnonce text, xpass text
 		x text;
 		cp text;
 		y text;
-	BEGIN1
-	x := xpass;
+	BEGIN
 	SELECT (random()::text || current_timestamp::text) INTO y;
-	SELECT md5(x||y) INTO cp;
+	SELECT md5(xpass||y) INTO cp;
 	uid := -1;
 	INSERT into users (userid,domain,nonce,crypt_md5_pass, rand_salt,auto_reg) VALUES 
 	(u,d, xnonce, cp, y, areg) RETURNING id INTO uid; 
