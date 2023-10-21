@@ -10,6 +10,7 @@
  * This program is free software, distributed under the terms of
  * the GNU General Public License, with a few exceptions granted (see LICENSE)
  */ 
+
 #include <stdlib.h>
 #include <stdio.h>
 #include <getopt.h>
@@ -312,7 +313,8 @@ int parse_conf(FILE *f, struct imps_conf_t *config)
      octstr_destroy(proxy_pass);
      octstr_destroy(proxy_except_regexp);
      gwlist_destroy(proxy_except, (void *)octstr_destroy);
-     
+#undef HAVE_LIBSSL
+
 #ifdef HAVE_LIBSSL
      if (config->ssl_certkeyfile[0]) {
 	  Octstr *x = octstr_create(config->ssl_certkeyfile);

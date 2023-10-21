@@ -289,24 +289,36 @@ else
         fi
 fi
 
-AC_CHECK_LIB([gwlib], [cfg_create], [], AC_MSG_ERROR([Kannel gwlib is required!]))
-AC_CHECK_LIB([wap], [wsp_headers_pack], [], AC_MSG_ERROR([Kannel WAP lib is required!]))
+dnl AC_CHECK_LIB([gwlib], [cfg_create], [], AC_MSG_ERROR([Kannel gwlib is required!]))
+dnl AC_CHECK_LIB([wap], [wsp_headers_pack], [], AC_MSG_ERROR([Kannel WAP lib is required!]))
 
-AC_CHECK_LIB([iksemel], [iks_set_tls_credentials], [], AC_MSG_ERROR([(patched) iksemel lib is required!]))
+dnl AC_CHECK_LIB([iksemel], [iks_set_tls_credentials], [], AC_MSG_ERROR([(patched) iksemel lib is required!]))
 
 dnl Checking for libgnutls
-gnutls_ver_required="2.2.0"
-AC_PATH_PROGS(GNUTLS_CONFIG, libgnutls-config, no)
-if test "$GNUTLS_CONFIG" = "no"; then
-  AC_MSG_ERROR([You MUST have the GNU TLS library installed])
-else
-  gnutls_version=`$GNUTLS_CONFIG --version`
-  AC_MSG_RESULT([$gnutls_version])
-  LIBS="$LIBS `$GNUTLS_CONFIG --libs`"
-  CFLAGS="$CFLAGS `$GNUTLS_CONFIG --cflags`"
-fi
-
+dnl gnutls_ver_required="2.2.0"
+dnl AC_PATH_PROGS(GNUTLS_CONFIG, gnutls, no)
+dnl if test "$GNUTLS_CONFIG" = "no"; then
+dnl   AC_MSG_ERROR([You MUST have the GNU TLS library installed])
+dnl else
+dnl   gnutls_version=`$GNUTLS_CONFIG --version`
+dnl   AC_MSG_RESULT([$gnutls_version])
+dnl   LIBS="$LIBS `$GNUTLS_CONFIG --libs`"
+dnl   CFLAGS="$CFLAGS `$GNUTLS_CONFIG --cflags`"
+dnl fi
+dnl 
 dnl Implement the --with-pgsql-dir option.
+
+LIBS="$LIBS `pkg-config --libs iksemel`"
+CFLAGS="$CFLAGS `pkg-config --cflags iksemel`"
+
+LIBS="$LIBS `pkg-config --libs libgcrypt`"
+CFLAGS="$CFLAGS `pkg-config --cflags libgcrypt`"
+
+CFLAGS="-fcommon $CFLAGS"
+LIBS="$LIBS --allow-multiple-definition"
+
+
+
 pgsqlloc="/usr/local/pgsql"
 AC_ARG_WITH(pgsql-dir,
 [  --with-pgsql-dir=DIR    where to look for PostgreSQL libs and header files

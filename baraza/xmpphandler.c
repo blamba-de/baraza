@@ -408,18 +408,18 @@ static void s2s_xmpp_listener(void *unused)
 				octstr_get_cstr(id_data), 
 				XMPP_CONNECTING | XMPP_INCOMING);
 	  
-	  xconn->prs = iks_stream_new_ex("jabber:server", xconn,
-					 s2s_xmpp_processor, 
-					 xtls ? 
-					 "<stream:features xmlns:stream='http://etherx.jabber.org/streams'>"
-					 "<starttls xmlns='urn:ietf:params:xml:ns:xmpp-tls'/>"
-					 "<dialback xmlns='urn:xmpp:features:dialback'/>"
-					 "</stream:features>" :
-					 "<stream:features xmlns:stream='http://etherx.jabber.org/streams'>"
-					 "<dialback xmlns='urn:xmpp:features:dialback'/>"
-					 "</stream:features>",
-					 "id", xconn->id,
-					 "xmlns:db", "jabber:server:dialback");
+//	  xconn->prs = iks_stream_new_ex("jabber:server", xconn,
+//					 s2s_xmpp_processor, 
+//					 xtls ? 
+//					 "<stream:features xmlns:stream='http://etherx.jabber.org/streams'>"
+//					 "<starttls xmlns='urn:ietf:params:xml:ns:xmpp-tls'/>"
+//					 "<dialback xmlns='urn:xmpp:features:dialback'/>"
+//					 "</stream:features>" :
+//					 "<stream:features xmlns:stream='http://etherx.jabber.org/streams'>"
+//					 "<dialback xmlns='urn:xmpp:features:dialback'/>"
+//					 "</stream:features>",
+//					 "id", xconn->id,
+//					 "xmlns:db", "jabber:server:dialback");
 	  octstr_destroy(x);
 	  octstr_destroy(id_data);
 	  if (xconn->prs == NULL)  {
@@ -428,7 +428,7 @@ static void s2s_xmpp_listener(void *unused)
 	       goto loop;
 	  } else {
 	       iks_set_log_hook(xconn->prs, my_iks_log_hook);
-	       iks_set_tls_credentials(xconn->prs, cred);
+	       //iks_set_tls_credentials(xconn->prs, cred);
 	  }
 	  iks_connect_fd(xconn->prs, fd);
 
@@ -530,17 +530,17 @@ static int get_connection(char *domain, char *our_domain, XMPPConn_t **xconn, in
      
      x = make_xmppconn(domain, our_domain, NULL, NULL, 
 		       XMPP_CONNECTING | XMPP_OUTGOING);
-     if ((x->prs = iks_stream_new_ex("jabber:server", x,
-				     s2s_xmpp_processor, "",	       
-				     "xmlns:db", "jabber:server:dialback", 
-				     "from", x->our_domain)) == NULL)  {
+//     if ((x->prs = iks_stream_new_ex("jabber:server", x,
+//				     s2s_xmpp_processor, "",	       
+//				     "xmlns:db", "jabber:server:dialback", 
+//				     "from", x->our_domain)) == NULL)  {
 	  error(0, "failed to create sax parser for connection for %s",
 		domain);
 	  goto done;
-     }  else {
-	  iks_set_log_hook(x->prs, my_iks_log_hook);
-	  iks_set_tls_credentials(x->prs, cred);
-     }
+//     }  else {
+//	  iks_set_log_hook(x->prs, my_iks_log_hook);
+//	  iks_set_tls_credentials(x->prs, cred);
+//     }
      
      for (i = 0; i<scount; i++) 
 	  if (iks_connect_via(x->prs, recs[i].host, recs[i].port, 
